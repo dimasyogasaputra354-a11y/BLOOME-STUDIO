@@ -8,6 +8,7 @@ class Studio_model extends CI_Model
 		$today = date('Y-m-d');
 
 		return $this->db
+			->select('code, discipline, title, tagline, price, price_unit, terms_note, image_path')
 			->where('is_active', 1)
 			->group_start()
 				->where('valid_from IS NULL', NULL, FALSE)

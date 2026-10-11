@@ -45,12 +45,37 @@ $money = function ($amount) {
 			<div class="dashboard-columns">
 				<section class="admin-panel" id="promos">
 					<div class="panel-heading"><div><p class="admin-eyebrow">PENAWARAN</p><h2>Promo terbaru</h2></div><span class="panel-count"><?php echo count($promos); ?> promo</span></div>
+					<?php if ($promo_notice = $this->session->flashdata('promo_image_notice')): ?><p class="promo-image-feedback is-success" role="status"><?php echo html_escape($promo_notice); ?></p><?php endif; ?>
+					<?php if ($promo_error = $this->session->flashdata('promo_image_error')): ?><p class="promo-image-feedback is-error" role="alert"><?php echo html_escape($promo_error); ?></p><?php endif; ?>
 					<?php if ($promos): ?>
-					<div class="table-scroll"><table><thead><tr><th>Nama promo</th><th>Disiplin</th><th>Harga</th><th>Status</th></tr></thead><tbody>
-						<?php foreach ($promos as $promo): ?><tr><td><strong><?php echo html_escape($promo->title); ?></strong><small><?php echo html_escape($promo->code); ?></small></td><td><span class="discipline-tag"><?php echo html_escape(ucfirst($promo->discipline)); ?></span></td><td><?php echo $money($promo->price); ?></td><td><span class="status-pill <?php echo $promo->is_active ? 'status-active' : 'status-inactive'; ?>"><?php echo $promo->is_active ? 'Aktif' : 'Nonaktif'; ?></span></td></tr><?php endforeach; ?>
+					<div class="table-scroll"><table><thead><tr><th>Nama promo</th><th>Disiplin</th><th>Harga</th><th>Status</th><th>Gambar promo</th></tr></thead><tbody>
+						<?php foreach ($promos as $promo): ?>
+						<?php
+							$promo_image_path = $promo->image_path;
+							if (!$promo_image_path) {
+								$promo_defaults = array('PILATES-1010' => '10.10-pilates.jpeg', 'YOGA-AFTER-OFFICE' => 'yoga-promo.jpeg');
+								$promo_image_path = isset($promo_defaults[$promo->code]) ? $promo_defaults[$promo->code] : '';
+							}
+						?>
+						<tr>
+							<td><strong><?php echo html_escape($promo->title); ?></strong><small><?php echo html_escape($promo->code); ?></small></td>
+							<td><span class="discipline-tag"><?php echo html_escape(ucfirst($promo->discipline)); ?></span></td>
+							<td><?php echo $money($promo->price); ?></td>
+							<td><span class="status-pill <?php echo $promo->is_active ? 'status-active' : 'status-inactive'; ?>"><?php echo $promo->is_active ? 'Aktif' : 'Nonaktif'; ?></span></td>
+							<td>
+								<?php if ($promo_image_path && preg_match('#^(?:promo-uploads/)?[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpe?g|png)$#i', $promo_image_path)): ?><img class="promo-image-preview" src="<?php echo html_escape(base_url('img/' . $promo_image_path)); ?>" alt="Gambar <?php echo html_escape($promo->title); ?>"><?php endif; ?>
+								<form class="promo-image-form" action="<?php echo site_url('admin/promo-image/' . (int) $promo->id); ?>" method="post" enctype="multipart/form-data">
+									<input type="hidden" name="<?php echo html_escape($this->security->get_csrf_token_name()); ?>" value="<?php echo html_escape($this->security->get_csrf_hash()); ?>">
+									<label class="sr-only" for="promo-image-<?php echo (int) $promo->id; ?>">Pilih gambar untuk <?php echo html_escape($promo->title); ?></label>
+									<input id="promo-image-<?php echo (int) $promo->id; ?>" type="file" name="promo_image" accept=".jpg,.jpeg,.png,image/jpeg,image/png" required>
+									<button type="submit" class="admin-button admin-button-dark">Simpan gambar</button>
+								</form>
+							</td>
+						</tr>
+						<?php endforeach; ?>
 					</tbody></table></div>
 					<?php else: ?><p class="empty-state">Belum ada data promo.</p><?php endif; ?>
-					<div class="panel-footnote">Menampilkan promo dari database Bloomè Studio.</div>
+					<div class="panel-footnote">Kelola gambar promo di sini. Format JPG/PNG, maksimal 5 MB.</div>
 				</section>
 				<section class="admin-panel" id="studio">
 					<div class="panel-heading"><div><p class="admin-eyebrow">KELAS &amp; TIM</p><h2>Studio snapshot</h2></div><span class="snapshot-flower">✿</span></div>

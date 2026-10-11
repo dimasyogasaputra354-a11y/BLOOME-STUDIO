@@ -184,6 +184,7 @@ $sessions_in_package = function ($package) {
 			</section>
 		</form>
 	</main>
+	<?php $this->load->view('partials/reviews'); ?>
 	<script>
 		window.bloomeBooking = {
 			availabilityUrl: <?php echo json_encode($availability_url); ?>,

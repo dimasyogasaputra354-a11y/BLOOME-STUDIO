@@ -32,6 +32,89 @@ class Admin extends CI_Controller
 		$this->load->view('admin/dashboard', $data);
 	}
 
+	public function promo_image($promo_id = NULL)
+	{
+		if (!$this->require_booking_admin()) {
+			return;
+		}
+		if ($this->input->method(TRUE) !== 'POST') {
+			show_404();
+		}
+
+		$promo = $this->admin_model->get_promo_for_image((int) $promo_id);
+		if (!$promo) {
+			show_404();
+		}
+		if (empty($_FILES['promo_image']['name'])) {
+			$this->session->set_flashdata('promo_image_error', 'Pilih file gambar promo terlebih dahulu.');
+			redirect('admin#promos');
+			return;
+		}
+
+		$upload_directory = FCPATH . 'img' . DIRECTORY_SEPARATOR . 'promo-uploads' . DIRECTORY_SEPARATOR;
+		if (!is_dir($upload_directory) && !mkdir($upload_directory, 0755, TRUE) && !is_dir($upload_directory)) {
+			log_message('error', 'Could not create promo image upload directory: ' . $upload_directory);
+			$this->session->set_flashdata('promo_image_error', 'Folder penyimpanan gambar promo tidak dapat dibuat.');
+			redirect('admin#promos');
+			return;
+		}
+
+		$this->load->library('upload');
+		$this->upload->initialize(array(
+			'upload_path' => $upload_directory,
+			'allowed_types' => 'jpg|jpeg|png',
+			'max_size' => 5120,
+			'max_width' => 6000,
+			'max_height' => 6000,
+			'encrypt_name' => TRUE,
+			'file_ext_tolower' => TRUE,
+			'remove_spaces' => TRUE,
+			'detect_mime' => TRUE,
+			'mod_mime_fix' => TRUE,
+			'overwrite' => FALSE
+		));
+
+		if (!$this->upload->do_upload('promo_image')) {
+			$this->session->set_flashdata('promo_image_error', strip_tags($this->upload->display_errors('', '')));
+			redirect('admin#promos');
+			return;
+		}
+
+		$file = $this->upload->data();
+		$dimensions = getimagesize($file['full_path']);
+		if ($dimensions === FALSE || !in_array($dimensions['mime'], array('image/jpeg', 'image/png'), TRUE)) {
+			if (!unlink($file['full_path'])) {
+				log_message('error', 'Could not remove invalid promo image: ' . $file['full_path']);
+			}
+			$this->session->set_flashdata('promo_image_error', 'File yang diunggah bukan gambar JPG, JPEG, atau PNG yang valid.');
+			redirect('admin#promos');
+			return;
+		}
+
+		$new_image_path = 'promo-uploads/' . $file['file_name'];
+		if (!$this->admin_model->set_promo_image((int) $promo_id, $new_image_path)) {
+			if (!unlink($file['full_path'])) {
+				log_message('error', 'Could not remove unlinked promo image: ' . $file['full_path']);
+			}
+			$this->session->set_flashdata('promo_image_error', 'Gambar berhasil diunggah tetapi tidak dapat disimpan pada promo.');
+			redirect('admin#promos');
+			return;
+		}
+
+		if (strpos((string) $promo->image_path, 'promo-uploads/') === 0) {
+			$old_filename = substr($promo->image_path, strlen('promo-uploads/'));
+			if (preg_match('/^[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpe?g|png)$/i', $old_filename)) {
+				$old_path = $upload_directory . $old_filename;
+				if (is_file($old_path) && !unlink($old_path)) {
+					log_message('error', 'Could not remove replaced promo image: ' . $old_path);
+				}
+			}
+		}
+
+		$this->session->set_flashdata('promo_image_notice', 'Gambar promo berhasil diperbarui.');
+		redirect('admin#promos');
+	}
+
 	public function login()
 	{
 		if ($this->session->userdata('admin_user_id')) {

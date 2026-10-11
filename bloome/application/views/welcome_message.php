@@ -1,7 +1,7 @@
 <?php
 defined('BASEPATH') OR exit('No direct script access allowed');
 
-$whatsapp_number = '6281234567890';
+$whatsapp_number = '628218000958';
 $whatsapp_url = 'https://wa.me/' . $whatsapp_number . '?text=';
 $booking_message = rawurlencode('Halo Bloomè Studio, saya ingin booking sesi Pilates / Yoga / Beauty.');
 $booking_url = site_url('booking');
@@ -17,6 +17,22 @@ $service_booking_url = function ($service) use ($booking_url) {
 	}
 
 	return $booking_url;
+};
+$promo_image_url = function ($promo) {
+	$image_path = !empty($promo->image_path) ? $promo->image_path : NULL;
+	if ($image_path === NULL) {
+		$image_defaults = array(
+			'PILATES-1010' => '10.10-pilates.jpeg',
+			'YOGA-AFTER-OFFICE' => 'yoga-promo.jpeg'
+		);
+		$image_path = isset($image_defaults[$promo->code]) ? $image_defaults[$promo->code] : NULL;
+	}
+
+	if ($image_path === NULL || !preg_match('#^(?:promo-uploads/)?[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpe?g|png)$#i', $image_path)) {
+		return NULL;
+	}
+
+	return base_url('img/' . $image_path);
 };
 ?><!DOCTYPE html>
 <html lang="id">
@@ -61,11 +77,9 @@ $service_booking_url = function ($service) use ($booking_url) {
 				<div class="hero-benefits"><span>✓ Booking online</span><span>✓ Pembayaran mudah</span><span>✓ Konfirmasi WhatsApp</span></div>
 			</div>
 			<div class="hero-visual" aria-label="Suasana Bloomè Studio">
-				<div class="hero-image-main">
-					<img src="https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&amp;fit=crop&amp;w=1000&amp;q=85" alt="Studio yoga yang hangat dan tenang">
-				</div>
-				<div class="hero-image-small">
-					<img src="https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&amp;fit=crop&amp;w=640&amp;q=85" alt="Ruang perawatan beauty">
+				<div class="hero-image-main hero-carousel" data-hero-carousel role="region" aria-label="Galeri foto Bloomè Studio" aria-roledescription="carousel">
+					<img class="hero-slide is-active" src="<?php echo base_url('img/yoga.jpeg'); ?>" alt="Studio yoga Bloomè dengan ruang latihan yang terang" aria-hidden="false">
+					<img class="hero-slide" src="<?php echo base_url('img/Beauty.jpeg'); ?>" alt="Area beauty Bloomè dengan interior yang nyaman" aria-hidden="true">
 				</div>
 				<div class="hero-image-caption"><span class="caption-spark">✳</span><span>make a little<br>space for you</span></div>
 			</div>
@@ -79,12 +93,16 @@ $service_booking_url = function ($service) use ($booking_url) {
 			<?php if (!empty($promos)): ?>
 			<div class="promo-grid">
 				<?php foreach ($promos as $index => $promo): ?>
-				<article class="promo-card <?php echo $index % 2 === 1 ? 'promo-card-sage' : ''; ?>">
-					<div class="promo-topline"><span class="promo-label"><?php echo html_escape(strtoupper($promo->discipline)); ?></span><span class="promo-spark">✳</span></div>
-					<h3><?php echo html_escape($promo->title); ?></h3>
-					<?php if (!empty($promo->tagline)): ?><p class="promo-tagline"><?php echo html_escape($promo->tagline); ?></p><?php endif; ?>
-					<?php if (!empty($promo->terms_note)): ?><p class="promo-description"><?php echo html_escape($promo->terms_note); ?></p><?php endif; ?>
-					<div class="promo-bottom"><p class="promo-price"><?php echo $money($promo->price); ?> <small>/ <?php echo html_escape($promo->price_unit); ?></small></p><a class="button button-dark button-small" href="<?php echo $service_booking_url($promo->discipline); ?>">Gunakan Promo <span>→</span></a></div>
+				<?php $promo_image = $promo_image_url($promo); ?>
+				<article class="promo-card<?php echo $promo_image ? ' has-image' : ''; ?> <?php echo $index % 2 === 1 ? 'promo-card-sage' : ''; ?>">
+					<?php if ($promo_image): ?><img class="promo-card-image" src="<?php echo html_escape($promo_image); ?>" alt="<?php echo html_escape($promo->title); ?>" loading="lazy"><?php endif; ?>
+					<div class="promo-card-content">
+						<div class="promo-topline"><span class="promo-label"><?php echo html_escape(strtoupper($promo->discipline)); ?></span><span class="promo-spark">✳</span></div>
+						<h3><?php echo html_escape($promo->title); ?></h3>
+						<?php if (!empty($promo->tagline)): ?><p class="promo-tagline"><?php echo html_escape($promo->tagline); ?></p><?php endif; ?>
+						<?php if (!empty($promo->terms_note)): ?><p class="promo-description"><?php echo html_escape($promo->terms_note); ?></p><?php endif; ?>
+						<div class="promo-bottom"><p class="promo-price"><?php echo $money($promo->price); ?> <small>/ <?php echo html_escape($promo->price_unit); ?></small></p><a class="button button-dark button-small" href="<?php echo $service_booking_url($promo->discipline); ?>">Gunakan Promo <span>→</span></a></div>
+					</div>
 				</article>
 				<?php endforeach; ?>
 			</div>
@@ -140,37 +158,32 @@ $service_booking_url = function ($service) use ($booking_url) {
 			</div>
 		</section>
 
-		<section class="reviews-section section-wrap section-space" id="reviews">
-			<div class="section-heading centered-heading"><p class="eyebrow">REAL STORIES</p><h2>Yang sudah merasakan.</h2></div>
-			<div class="review-grid">
-				<figure class="review-card"><div class="stars" aria-label="5 dari 5 bintang">★★★★★</div><blockquote>“Tempatnya cantik dan tenang. Booking-nya juga gampang banget.”</blockquote><figcaption><span class="review-avatar">N</span>Nadia</figcaption></figure>
-				<figure class="review-card"><div class="stars" aria-label="5 dari 5 bintang">★★★★★</div><blockquote>“Instrukturnya ramah, studio bersih, pasti balik lagi.”</blockquote><figcaption><span class="review-avatar">A</span>Alya</figcaption></figure>
-				<figure class="review-card"><div class="stars" aria-label="4 dari 5 bintang">★★★★<span>★</span></div><blockquote>“Suka banget konsepnya. Admin juga cepat membalas.”</blockquote><figcaption><span class="review-avatar">R</span>Rani</figcaption></figure>
-			</div>
-		</section>
+		<?php $this->load->view('partials/reviews'); ?>
 
 		<section class="gallery-section section-wrap section-space" id="gallery">
 			<div class="section-heading heading-row"><div><p class="eyebrow">BLOOMÈ MOMENTS</p><h2>Lihat <em>suasananya.</em></h2></div><span class="gallery-note">a little glimpse of our space</span></div>
 			<div class="gallery-grid">
-				<img src="https://images.unsplash.com/photo-1518611012118-696072aa579a?auto=format&amp;fit=crop&amp;w=850&amp;q=85" alt="Latihan pilates di studio" loading="lazy">
-				<img src="https://images.unsplash.com/photo-1545389336-cf090694435e?auto=format&amp;fit=crop&amp;w=700&amp;q=85" alt="Ruang yoga dengan cahaya alami" loading="lazy">
-				<img src="https://images.unsplash.com/photo-1604654894610-df63bc536371?auto=format&amp;fit=crop&amp;w=700&amp;q=85" alt="Perawatan kuku yang detail" loading="lazy">
-				<img src="https://images.unsplash.com/photo-1515377905703-c4788e51af15?auto=format&amp;fit=crop&amp;w=850&amp;q=85" alt="Ruang perawatan yang nyaman" loading="lazy">
+				<img src="<?php echo base_url('img/gallery-studio-01.jpg'); ?>" alt="Sesi Pilates reformer di Bloomè Studio" loading="lazy">
+				<img src="<?php echo base_url('img/gallery-studio-02.jpg'); ?>" alt="Ruang kelas yoga Bloomè Studio" loading="lazy">
+				<img src="<?php echo base_url('img/gallery-studio-03.jpg'); ?>" alt="Area lounge Bloomè Studio" loading="lazy">
+				<img src="<?php echo base_url('img/gallery-studio-04.jpg'); ?>" alt="Area perawatan beauty Bloomè Studio" loading="lazy">
 			</div>
 		</section>
 
 		<section class="contact-section section-wrap" id="booking">
-			<div class="contact-copy"><p class="eyebrow">NEED HELP?</p><h2>Mau tanya dulu sebelum booking?</h2><p>Hubungi Bloomè Studio untuk cek layanan, paket, atau request khusus.</p><div class="contact-actions"><a class="button button-dark" href="<?php echo $whatsapp_url . $booking_message; ?>" target="_blank" rel="noopener">WhatsApp Studio <span>↗</span></a><a class="phone-link" href="tel:+6281234567890">☏ &nbsp;0812-3456-7890</a></div></div>
-			<div class="social-card"><span class="social-flower">✿</span><p>Ikuti kami</p><a href="https://www.instagram.com/bloomestudio.jkt" target="_blank" rel="noopener"><span>Instagram</span><strong>@bloomestudio.jkt ↗</strong></a><a href="https://www.threads.net/@bloomestudio.jkt" target="_blank" rel="noopener"><span>Threads</span><strong>@bloomestudio.jkt ↗</strong></a></div>
+			<div class="contact-copy"><p class="eyebrow">NEED HELP?</p><h2>Mau tanya dulu sebelum booking?</h2><p>Hubungi Bloomè Studio untuk cek layanan, paket, atau request khusus.</p><div class="contact-actions"><a class="button button-dark" href="<?php echo $whatsapp_url . $booking_message; ?>" target="_blank" rel="noopener"><svg class="whatsapp-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.4 11.8a8.4 8.4 0 0 1-12.5 7.3L3 20.3l1.2-4.7a8.4 8.4 0 1 1 16.2-3.8Z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M8.4 8.2c.2-.5.5-.5.8-.5h.5c.2 0 .4.1.5.4l.7 1.7c.1.2.1.4-.1.6l-.6.7c-.2.2-.2.4 0 .6.5.9 1.2 1.5 2.1 2 .2.1.4.1.6-.1l.7-.8c.2-.2.4-.2.6-.1l1.7.8c.3.1.4.3.4.5 0 .4-.2 1-.6 1.3-.4.4-1 .6-1.7.5-1-.1-2.4-.7-3.8-1.9-1.2-1-2-2.3-2.3-3.2-.3-.9-.1-1.7.5-2.5Z" fill="currentColor"/></svg>WhatsApp Studio <span aria-hidden="true">↗</span></a></div></div>
 		</section>
 	</main>
 
 	<footer class="site-footer">
 		<div class="footer-brand"><a class="wordmark" href="#home">Bloomè <span>Studio</span></a><p>Pilates · Yoga · Beauty</p></div>
-		<div class="footer-column"><h3>Studio</h3><p>Ruko Cinere Terrace, Blok JA, No. 11<br>Cinere - Depok</p></div>
-		<div class="footer-column"><h3>Contact</h3><a href="tel:+6281234567890">0812-3456-7890</a><a href="mailto:hello@bloome.studio">hello@bloome.studio</a></div>
+		<div class="footer-column footer-location"><h3>Studio</h3><a class="location-link" href="https://maps.app.goo.gl/Ukuq2Xiimw5tQijk7" target="_blank" rel="noopener" aria-label="Buka lokasi Bloomè Studio di Google Maps"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="maps-pin" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#4285F4"/><stop offset=".35" stop-color="#34A853"/><stop offset=".68" stop-color="#FBBC04"/><stop offset="1" stop-color="#EA4335"/></linearGradient></defs><path d="M19 10.2c0 5-7 11-7 11s-7-6-7-11a7 7 0 1 1 14 0Z" fill="none" stroke="url(#maps-pin)" stroke-width="2"/><circle cx="12" cy="10" r="2.3" fill="#EA4335"/></svg><span>Ruko Cinere Terrace, Blok JA, No. 11<br>Cinere, Depok</span></a></div>
+		<div class="footer-column"><h3>Contact</h3><a href="tel:+628218000958">0821-8000-958</a><a href="mailto:Bloomecinere.sejahteraabadi@gmail.com">Bloomecinere.sejahteraabadi@gmail.com</a><div class="footer-socials">
+			<a class="footer-social-link instagram-link" href="https://www.instagram.com/bloomestudio.jkt" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="instagram-mark" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".65" stop-color="#D62976"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="5.2" fill="none" stroke="url(#instagram-mark)" stroke-width="1.9"/><circle cx="12" cy="12" r="4.1" fill="none" stroke="url(#instagram-mark)" stroke-width="1.9"/><circle cx="17.8" cy="6.6" r="1.2" fill="#D62976"/></svg><span>@bloomestudio.jkt</span></a>
+			<a class="footer-social-link threads-link" href="https://www.threads.net/@bloomestudio.jkt" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.9 10.8c-.5-4-2.7-6.3-6.2-6.3-4.1 0-6.6 3-6.6 7.6 0 4.7 2.4 7.6 6.6 7.6 3.2 0 5.3-1.8 5.3-4.6 0-2.4-1.7-3.9-4.3-3.9-2.2 0-3.6 1-3.6 2.6 0 1.3 1 2.2 2.5 2.2 1.7 0 2.8-1.1 2.8-3.1 0-2.7-1.4-4.3-3.7-4.3-1.2 0-2.2.4-3.1 1.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span>@bloomestudio.jkt</span></a>
+		</div></div>
 		<div class="footer-bottom"><span>© <?php echo date('Y'); ?> Bloomè Studio</span><span>Made with care, for your wellbeing.</span></div>
 	</footer>
-	<script src="<?php echo base_url('assets/js/bloome.js'); ?>"></script>
+	<script src="<?php echo base_url('assets/js/bloome.js?v=' . filemtime(FCPATH . 'assets/js/bloome.js')); ?>"></script>
 </body>
 </html>

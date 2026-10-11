@@ -365,6 +365,7 @@ CREATE TABLE `promos` (
   `valid_from` date DEFAULT NULL,
   `valid_until` date DEFAULT NULL,
   `terms_note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `image_path` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -374,9 +375,9 @@ CREATE TABLE `promos` (
 -- Dumping data for table `promos`
 --
 
-INSERT INTO `promos` (`id`, `code`, `discipline`, `title`, `tagline`, `price`, `price_unit`, `session_count`, `participants_min`, `participants_max`, `available_days`, `valid_from`, `valid_until`, `terms_note`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 'PILATES-1010', 'pilates', '10.10 Pilates Deal', 'Your 10.10 reset', 190000, '2 session', 2, NULL, NULL, NULL, NULL, NULL, 'DM for T&C and details', 1, '2026-10-10 17:37:54', '2026-10-10 17:37:54'),
-(2, 'YOGA-AFTER-OFFICE', 'yoga', 'Yoga After Office Hours', NULL, 700000, 'group', NULL, 8, 11, 'Monday-Friday', '2026-10-01', '2026-10-31', 'Valid throughout October 2026. DM for T&C and details', 1, '2026-10-10 17:37:54', '2026-10-10 17:37:54');
+INSERT INTO `promos` (`id`, `code`, `discipline`, `title`, `tagline`, `price`, `price_unit`, `session_count`, `participants_min`, `participants_max`, `available_days`, `valid_from`, `valid_until`, `terms_note`, `image_path`, `is_active`, `created_at`, `updated_at`) VALUES
+(1, 'PILATES-1010', 'pilates', '10.10 Pilates Deal', 'Your 10.10 reset', 190000, '2 session', 2, NULL, NULL, NULL, NULL, NULL, 'DM for T&C and details', '10.10-pilates.jpeg', 1, '2026-10-10 17:37:54', '2026-10-10 17:37:54'),
+(2, 'YOGA-AFTER-OFFICE', 'yoga', 'Yoga After Office Hours', NULL, 700000, 'group', NULL, 8, 11, 'Monday-Friday', '2026-10-01', '2026-10-31', 'Valid throughout October 2026. DM for T&C and details', 'yoga-promo.jpeg', 1, '2026-10-10 17:37:54', '2026-10-10 17:37:54');
 
 -- --------------------------------------------------------
 

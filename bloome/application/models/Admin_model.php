@@ -71,11 +71,30 @@ class Admin_model extends CI_Model
 	public function get_recent_promos()
 	{
 		return $this->db
-			->select('code, discipline, title, price, price_unit, is_active')
+			->select('id, code, discipline, title, price, price_unit, is_active, image_path')
 			->order_by('created_at', 'DESC')
 			->limit(5)
 			->get('promos')
 			->result();
+	}
+
+	public function get_promo_for_image($promo_id)
+	{
+		return $this->db
+			->select('id, image_path')
+			->where('id', (int) $promo_id)
+			->limit(1)
+			->get('promos')
+			->row();
+	}
+
+	public function set_promo_image($promo_id, $image_path)
+	{
+		$this->db
+			->where('id', (int) $promo_id)
+			->update('promos', array('image_path' => $image_path));
+
+		return $this->db->affected_rows() === 1;
 	}
 
 	public function get_pilates_prices()

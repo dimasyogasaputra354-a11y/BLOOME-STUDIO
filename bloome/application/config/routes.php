@@ -58,6 +58,7 @@ $route['booking/payment/(:any)'] = 'booking/payment/$1';
 $route['booking/status/(:any)'] = 'booking/status/$1';
 $route['booking/success/(:any)'] = 'booking/success/$1';
 $route['admin'] = 'admin/index';
+$route['admin/promo-image/(:num)'] = 'admin/promo_image/$1';
 $route['admin/bookings'] = 'admin/bookings';
 $route['admin/bookings/payment/(:num)/(:any)'] = 'admin/booking_payment_status/$1/$2';
 $route['admin/bookings/receipt/(:num)'] = 'admin/booking_payment_receipt/$1';
