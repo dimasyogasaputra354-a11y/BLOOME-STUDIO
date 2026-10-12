@@ -36,7 +36,8 @@ img { display: block; width: 100%; }
 .nav-booking { min-height: 48px; padding: 0 25px; }
 .menu-toggle { display: none; }
 
-.booking-page { min-height: 100vh; background: #f7f4f0; }
+.booking-page { min-height: 100vh; background: linear-gradient(rgba(250, 247, 243, .78), rgba(250, 247, 243, .84)), url("../../img/booking-pilates-studio.jpg") center / cover fixed; }
+.booking-promo-page { background-image: linear-gradient(rgba(250, 247, 243, .72), rgba(250, 247, 243, .8)), url("../../img/booking-pilates-studio.jpg"); }
 .booking-flow { width: min(610px, calc(100% - 40px)); margin: 0 auto; padding: 28px 0 64px; }
 .booking-back-link { display: inline-block; margin-bottom: 28px; color: #6f6867; font-size: 13px; }
 .booking-back-link:hover, .booking-back-step:hover { color: var(--rose); }
@@ -49,6 +50,19 @@ img { display: block; width: 100%; }
 .booking-intro { margin-bottom: 29px; color: var(--muted); font-size: 14px; }
 .booking-title-with-icon { display: flex; align-items: center; gap: 16px; margin-bottom: 25px; }
 .booking-title-with-icon h1 { margin: 0; }
+.booking-promo-intro { display: grid; grid-template-columns: minmax(0, 190px) minmax(0, 1fr); align-items: center; gap: 23px; margin: 0 0 29px; padding: 16px; border: 1px solid rgba(226, 216, 205, .9); border-radius: 18px; background: rgba(255, 254, 253, .88); box-shadow: 0 14px 36px rgba(75, 55, 43, .09); backdrop-filter: blur(10px); }
+.booking-promo-intro img { display: block; width: 100%; max-height: 265px; object-fit: contain; border-radius: 11px; }
+.booking-promo-intro .eyebrow { margin-bottom: 8px; }
+.booking-promo-intro h1 { margin: 0 0 10px; font-size: clamp(28px, 5vw, 39px); }
+.booking-promo-intro p:last-child { margin: 0; color: var(--muted); font-size: 13px; }
+.booking-promo-intro strong { color: #477d4c; }
+.booking-promo-price-card { display: grid; grid-template-columns: minmax(0, 135px) minmax(0, 1fr); align-items: center; gap: 17px; margin: 0 0 25px; padding: 13px; border: 1px solid #e6ddd4; border-radius: 16px; background: rgba(255, 254, 253, .92); box-shadow: 0 8px 24px rgba(75, 55, 43, .06); }
+.booking-promo-price-card img { display: block; width: 100%; height: 185px; object-fit: cover; object-position: center 24%; border-radius: 10px; }
+.booking-promo-price-card .eyebrow { margin-bottom: 6px; }
+.booking-promo-price-card h2 { margin: 0 0 5px; font-size: 20px; }
+.booking-promo-price-card strong { color: #3d7343; font-size: 17px; }
+.booking-promo-price-card strong small { color: var(--muted); font-size: 11px; font-weight: 400; }
+.booking-promo-price-card p:last-child { margin: 6px 0 0; color: var(--muted); font-size: 11px; }
 .pilates-barbell { width: 74px; height: 50px; flex: 0 0 74px; }
 .pilates-barbell-card { width: 30px; height: 24px; }
 .booking-errors, .booking-inline-error { margin: 0 0 20px; padding: 13px 16px; color: #8f343b; border: 1px solid #edcfd1; border-radius: 12px; background: #fff3f3; font-size: 12px; }
@@ -264,6 +278,9 @@ body.booking-page .reviews-section { width: min(1000px, calc(100% - 40px)); padd
 .location-link svg { width: 15px; height: 15px; flex: 0 0 15px; margin-top: 4px; }
 .location-link span { line-height: 1.8; }
 .footer-column a.location-link { margin-bottom: 0; }
+.footer-column a.studio-location-image { width: min(100%, 280px); margin-top: 12px; overflow: hidden; border: 1px solid #e4ddd6; border-radius: 12px; }
+.studio-location-image img { width: 100%; height: 132px; object-fit: cover; transition: transform .3s ease; }
+.studio-location-image:hover img { transform: scale(1.04); }
 .footer-socials { display: grid; gap: 5px; margin-top: 8px; }
 .footer-column a.footer-social-link { display: flex; align-items: center; gap: 7px; margin: 0; }
 .footer-social-link svg { width: 15px; height: 15px; flex: 0 0 15px; }
@@ -295,6 +312,14 @@ body.booking-page .reviews-section { width: min(1000px, calc(100% - 40px)); padd
 	.wordmark { font-size: 24px; }
 	.booking-flow { width: calc(100% - 36px); padding-top: 20px; }
 	.booking-back-link { margin-bottom: 22px; font-size: 12px; }
+	.booking-promo-intro { grid-template-columns: minmax(0, 120px) minmax(0, 1fr); gap: 13px; padding: 11px; }
+	.booking-promo-intro img { max-height: 200px; }
+	.booking-promo-intro h1 { font-size: 28px; }
+	.booking-promo-intro p:last-child { font-size: 11px; }
+	.booking-promo-price-card { grid-template-columns: minmax(0, 105px) minmax(0, 1fr); gap: 12px; padding: 10px; }
+	.booking-promo-price-card img { height: 150px; }
+	.booking-promo-price-card h2 { font-size: 17px; }
+	.booking-promo-price-card strong { font-size: 15px; }
 	.booking-step h1 { font-size: 38px; }
 	.booking-title-with-icon { gap: 10px; }
 	.pilates-barbell { width: 60px; height: 42px; flex-basis: 60px; }

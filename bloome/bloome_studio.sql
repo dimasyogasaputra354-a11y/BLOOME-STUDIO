@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1:3307
--- Generation Time: Oct 11, 2026 at 07:37 PM
+-- Generation Time: Oct 12, 2026 at 01:53 PM
 -- Server version: 10.1.38-MariaDB
 -- PHP Version: 5.6.40
 
@@ -21,8 +21,327 @@ SET time_zone = "+00:00";
 --
 -- Database: `bloome_studio`
 --
-CREATE DATABASE IF NOT EXISTS `bloome_studio` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE `bloome_studio`;
+
+DELIMITER $$
+--
+-- Procedures
+--
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_report_chart` (IN `p_date` DATE)  BEGIN
+  DECLARE v_min BIGINT UNSIGNED DEFAULT 0;
+  DECLARE v_max BIGINT UNSIGNED DEFAULT 0;
+
+  DROP TEMPORARY TABLE IF EXISTS `tmp_daily_series`;
+
+  -- 14 hari: p_date-13 ... p_date (tanpa CTE, kompatibel versi lama)
+  CREATE TEMPORARY TABLE `tmp_daily_series` AS
+  SELECT
+    DATE_SUB(p_date, INTERVAL n.i DAY) AS d,
+    COALESCE((
+      SELECT SUM(t.`amount`)
+      FROM `transactions` t
+      WHERE t.`status` = 'paid'
+        AND t.`trx_datetime` >= DATE_SUB(p_date, INTERVAL n.i DAY)
+        AND t.`trx_datetime` <  DATE_ADD(DATE_SUB(p_date, INTERVAL n.i DAY), INTERVAL 1 DAY)
+    ), 0) AS revenue
+  FROM (
+    SELECT 0 AS i UNION ALL SELECT 1 UNION ALL SELECT 2 UNION ALL SELECT 3
+    UNION ALL SELECT 4 UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7
+    UNION ALL SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11
+    UNION ALL SELECT 12 UNION ALL SELECT 13
+  ) n;
+
+  SELECT MIN(revenue), MAX(revenue) INTO v_min, v_max FROM `tmp_daily_series`;
+
+  SELECT
+    s.d                                   AS `tanggal`,
+    YEAR(s.d)                             AS `tahun`,
+    DATE_FORMAT(s.d, '%d-%m-%Y')          AS `label_tanggal`,
+    s.revenue                             AS `pendapatan`,
+    (s.revenue = v_min)                   AS `is_terendah`,
+    (s.revenue = v_max)                   AS `is_tertinggi`,
+    v_min                                 AS `pendapatan_terendah`,
+    v_max                                 AS `pendapatan_tertinggi`
+  FROM `tmp_daily_series` s
+  ORDER BY s.d;
+
+  DROP TEMPORARY TABLE IF EXISTS `tmp_daily_series`;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_report_detail` (IN `p_date` DATE, IN `p_search` VARCHAR(100))  BEGIN
+  SELECT
+    TIME_FORMAT(v.`trx_datetime`, '%H:%i')                          AS `Jam`,
+    v.`member_name`                                                 AS `Nama Member`,
+    v.`item_name`                                                   AS `Paket/Layanan`,
+    CASE v.`trx_type` WHEN 'sale' THEN 'Beli' ELSE 'Pakai Paket' END AS `Tipe`,
+    v.`sessions_remaining`                                          AS `Sisa Sesi`,
+    v.`member_phone`                                                AS `No HP`,
+    v.`coach_name`                                                  AS `Coach`,
+    v.`complaint_injury`                                            AS `Keluhan/Injury`,
+    v.`unit_price`                                                  AS `Harga`,
+    v.`amount`                                                      AS `Pendapatan`
+  FROM `v_transaction_detail` v
+  WHERE v.`status` = 'paid'
+    AND v.`trx_datetime` >= p_date
+    AND v.`trx_datetime` <  DATE_ADD(p_date, INTERVAL 1 DAY)
+    AND (
+      p_search IS NULL OR TRIM(p_search) = ''
+      OR v.`member_name` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_code` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_phone` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`coach_name`  LIKE CONCAT('%', TRIM(p_search), '%')
+    )
+  ORDER BY v.`trx_datetime`, v.`id`;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_report_summary` (IN `p_date` DATE)  BEGIN
+  SELECT
+    p_date                                                         AS `tanggal`,
+    YEAR(p_date)                                                   AS `tahun`,
+    COALESCE(SUM(t.`amount`), 0)                                   AS `pendapatan_hari_ini`,
+    COUNT(t.`id`)                                                  AS `total_transaksi_checkin`,
+    COALESCE(SUM(CASE WHEN t.`trx_type` = 'sale' THEN t.`sessions_total` ELSE 0 END), 0)
+                                                                   AS `total_sesi_termasuk_paket`,
+    ROUND(COALESCE(SUM(t.`amount`) / NULLIF(SUM(t.`amount` > 0), 0), 0))
+                                                                   AS `rata_rata_transaksi`
+  FROM `transactions` t
+  WHERE t.`status` = 'paid'
+    AND t.`trx_datetime` >= p_date
+    AND t.`trx_datetime` <  DATE_ADD(p_date, INTERVAL 1 DAY);
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_daily_report_total` (IN `p_date` DATE, IN `p_search` VARCHAR(100))  BEGIN
+  SELECT
+    p_date                         AS `tanggal`,
+    COUNT(v.`id`)                  AS `jumlah_baris`,
+    COALESCE(SUM(v.`amount`), 0)   AS `total_pendapatan`
+  FROM `v_transaction_detail` v
+  WHERE v.`status` = 'paid'
+    AND v.`trx_datetime` >= p_date
+    AND v.`trx_datetime` <  DATE_ADD(p_date, INTERVAL 1 DAY)
+    AND (
+      p_search IS NULL OR TRIM(p_search) = ''
+      OR v.`member_name` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_code` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_phone` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`coach_name`  LIKE CONCAT('%', TRIM(p_search), '%')
+    );
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_monthly_chart` (IN `p_year` SMALLINT, IN `p_sort` VARCHAR(12))  BEGIN
+  DECLARE v_min BIGINT UNSIGNED DEFAULT 0;
+  DECLARE v_max BIGINT UNSIGNED DEFAULT 0;
+
+  DROP TEMPORARY TABLE IF EXISTS `tmp_monthly_series`;
+
+  -- 12 bulan pada tahun terpilih (tanpa CTE, kompatibel versi lama)
+  CREATE TEMPORARY TABLE `tmp_monthly_series` AS
+  SELECT
+    n.m AS m,
+    COALESCE((
+      SELECT SUM(t.`amount`)
+      FROM `transactions` t
+      WHERE t.`status` = 'paid'
+        AND t.`trx_datetime` >= DATE_ADD(MAKEDATE(p_year, 1), INTERVAL (n.m - 1) MONTH)
+        AND t.`trx_datetime` <  DATE_ADD(MAKEDATE(p_year, 1), INTERVAL n.m MONTH)
+    ), 0) AS revenue
+  FROM (
+    SELECT 1 AS m UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
+    UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL SELECT 8
+    UNION ALL SELECT 9 UNION ALL SELECT 10 UNION ALL SELECT 11 UNION ALL SELECT 12
+  ) n;
+
+  SELECT MIN(revenue), MAX(revenue) INTO v_min, v_max FROM `tmp_monthly_series`;
+
+  SELECT
+    p_year    AS `tahun`,
+    s.m       AS `bulan`,
+    ELT(s.m, 'Januari','Februari','Maret','April','Mei','Juni',
+             'Juli','Agustus','September','Oktober','November','Desember') AS `nama_bulan`,
+    s.revenue AS `pendapatan`,
+    (s.revenue = v_min) AS `is_terendah`,
+    (s.revenue = v_max) AS `is_tertinggi`,
+    v_min     AS `pendapatan_terendah`,
+    v_max     AS `pendapatan_tertinggi`
+  FROM `tmp_monthly_series` s
+  ORDER BY
+    CASE WHEN p_sort = 'revenue_asc'  THEN s.revenue END ASC,
+    CASE WHEN p_sort = 'revenue_desc' THEN s.revenue END DESC,
+    s.m ASC;
+
+  DROP TEMPORARY TABLE IF EXISTS `tmp_monthly_series`;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_monthly_package_revenue` (IN `p_year` SMALLINT, IN `p_month` TINYINT)  BEGIN
+  DECLARE v_start DATE;
+  DECLARE v_end   DATE;
+
+  SET v_start = DATE_ADD(MAKEDATE(p_year, 1), INTERVAL (p_month - 1) MONTH);
+  SET v_end   = DATE_ADD(v_start, INTERVAL 1 MONTH);
+
+  SELECT x.`Kategori`, x.`Paket/Layanan`, x.`Jumlah Transaksi`, x.`Harga`, x.`Pendapatan`
+  FROM (
+    SELECT 0 AS srt,
+           t.`item_type`   AS `Kategori`,
+           t.`item_name`   AS `Paket/Layanan`,
+           SUM(t.`qty`)    AS `Jumlah Transaksi`,
+           t.`unit_price`  AS `Harga`,
+           SUM(t.`amount`) AS `Pendapatan`
+    FROM `transactions` t
+    WHERE t.`status` = 'paid'
+      AND t.`trx_type` = 'sale'
+      AND t.`trx_datetime` >= v_start
+      AND t.`trx_datetime` <  v_end
+    GROUP BY t.`item_type`, t.`item_name`, t.`unit_price`
+    UNION ALL
+    SELECT 1,
+           'TOTAL',
+           'Total Pendapatan Bulan Ini',
+           COALESCE(SUM(t.`qty`), 0),
+           NULL,
+           COALESCE(SUM(t.`amount`), 0)
+    FROM `transactions` t
+    WHERE t.`status` = 'paid'
+      AND t.`trx_type` = 'sale'
+      AND t.`trx_datetime` >= v_start
+      AND t.`trx_datetime` <  v_end
+  ) x
+  ORDER BY x.srt, x.`Kategori`, x.`Pendapatan` DESC;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_monthly_report_detail` (IN `p_year` SMALLINT, IN `p_month` TINYINT, IN `p_search` VARCHAR(100))  BEGIN
+  DECLARE v_start DATE;
+  DECLARE v_end   DATE;
+
+  SET v_start = DATE_ADD(MAKEDATE(p_year, 1), INTERVAL (p_month - 1) MONTH);
+  SET v_end   = DATE_ADD(v_start, INTERVAL 1 MONTH);
+
+  SELECT
+    DATE_FORMAT(v.`trx_datetime`, '%d-%m-%Y')                       AS `Tanggal`,
+    TIME_FORMAT(v.`trx_datetime`, '%H:%i')                          AS `Jam`,
+    v.`member_name`                                                 AS `Nama Member`,
+    v.`item_name`                                                   AS `Paket/Layanan`,
+    CASE v.`trx_type` WHEN 'sale' THEN 'Beli' ELSE 'Pakai Paket' END AS `Tipe`,
+    v.`sessions_remaining`                                          AS `Sisa Sesi`,
+    v.`member_phone`                                                AS `No HP`,
+    v.`coach_name`                                                  AS `Coach`,
+    v.`complaint_injury`                                            AS `Keluhan/Injury`,
+    v.`unit_price`                                                  AS `Harga`,
+    v.`amount`                                                      AS `Pendapatan`
+  FROM `v_transaction_detail` v
+  WHERE v.`status` = 'paid'
+    AND v.`trx_datetime` >= v_start
+    AND v.`trx_datetime` <  v_end
+    AND (
+      p_search IS NULL OR TRIM(p_search) = ''
+      OR v.`member_name` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_code` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_phone` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`coach_name`  LIKE CONCAT('%', TRIM(p_search), '%')
+    )
+  ORDER BY v.`trx_datetime`, v.`id`;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_monthly_report_total` (IN `p_year` SMALLINT, IN `p_month` TINYINT, IN `p_search` VARCHAR(100))  BEGIN
+  DECLARE v_start DATE;
+  DECLARE v_end   DATE;
+
+  SET v_start = DATE_ADD(MAKEDATE(p_year, 1), INTERVAL (p_month - 1) MONTH);
+  SET v_end   = DATE_ADD(v_start, INTERVAL 1 MONTH);
+
+  SELECT
+    p_year                         AS `tahun`,
+    p_month                        AS `bulan`,
+    COUNT(v.`id`)                  AS `jumlah_baris`,
+    COALESCE(SUM(v.`amount`), 0)   AS `total_pendapatan`
+  FROM `v_transaction_detail` v
+  WHERE v.`status` = 'paid'
+    AND v.`trx_datetime` >= v_start
+    AND v.`trx_datetime` <  v_end
+    AND (
+      p_search IS NULL OR TRIM(p_search) = ''
+      OR v.`member_name` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_code` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`member_phone` LIKE CONCAT('%', TRIM(p_search), '%')
+      OR v.`coach_name`  LIKE CONCAT('%', TRIM(p_search), '%')
+    );
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_monthly_summary` (IN `p_year` SMALLINT, IN `p_month` TINYINT)  BEGIN
+  DECLARE v_start DATE;
+  DECLARE v_end   DATE;
+  DECLARE v_best_date DATE DEFAULT NULL;
+  DECLARE v_best_rev  INT UNSIGNED DEFAULT NULL;
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET v_best_date = NULL;
+
+  SET v_start = DATE_ADD(MAKEDATE(p_year, 1), INTERVAL (p_month - 1) MONTH);
+  SET v_end   = DATE_ADD(v_start, INTERVAL 1 MONTH);
+
+  -- Hari terbaik = tanggal dengan pendapatan tertinggi (seri: tanggal paling awal)
+  SELECT DATE(t.`trx_datetime`), SUM(t.`amount`)
+    INTO v_best_date, v_best_rev
+  FROM `transactions` t
+  WHERE t.`status` = 'paid'
+    AND t.`trx_datetime` >= v_start
+    AND t.`trx_datetime` <  v_end
+  GROUP BY DATE(t.`trx_datetime`)
+  ORDER BY SUM(t.`amount`) DESC, DATE(t.`trx_datetime`) ASC
+  LIMIT 1;
+
+  SELECT
+    p_year                                                         AS `tahun`,
+    p_month                                                        AS `bulan`,
+    ELT(p_month, 'Januari','Februari','Maret','April','Mei','Juni',
+                 'Juli','Agustus','September','Oktober','November','Desember')
+                                                                   AS `nama_bulan`,
+    COALESCE(SUM(t.`amount`), 0)                                   AS `total_pendapatan_bulan_ini`,
+    COUNT(t.`id`)                                                  AS `total_transaksi_bulan_ini`,
+    COALESCE(SUM(CASE WHEN t.`trx_type` = 'sale' THEN t.`sessions_total` ELSE 0 END), 0)
+                                                                   AS `total_sesi_bulan_ini`,
+    v_best_date                                                    AS `hari_terbaik_tanggal`,
+    COALESCE(v_best_rev, 0)                                        AS `hari_terbaik_pendapatan`
+  FROM `transactions` t
+  WHERE t.`status` = 'paid'
+    AND t.`trx_datetime` >= v_start
+    AND t.`trx_datetime` <  v_end;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_search_coaches` (IN `p_q` VARCHAR(100))  BEGIN
+  SELECT
+    c.`id`,
+    c.`name`,
+    c.`is_active`,
+    COUNT(s.`id`) AS `jumlah_slot_jadwal`
+  FROM `coaches` c
+  LEFT JOIN `class_schedules` s ON s.`coach_id` = c.`id` AND s.`is_active` = 1
+  WHERE p_q IS NULL OR TRIM(p_q) = '' OR c.`name` LIKE CONCAT('%', TRIM(p_q), '%')
+  GROUP BY c.`id`, c.`name`, c.`is_active`
+  ORDER BY c.`name`
+  LIMIT 50;
+END$$
+
+CREATE DEFINER=`root`@`localhost` PROCEDURE `sp_search_members` (IN `p_q` VARCHAR(100))  BEGIN
+  SELECT
+    m.`id`,
+    m.`member_code`,
+    m.`full_name`,
+    m.`phone`,
+    COUNT(t.`id`)          AS `total_kunjungan`,
+    MAX(t.`trx_datetime`)  AS `kunjungan_terakhir`
+  FROM `members` m
+  LEFT JOIN `transactions` t ON t.`member_id` = m.`id` AND t.`status` = 'paid'
+  WHERE m.`is_active` = 1
+    AND (
+      p_q IS NULL OR TRIM(p_q) = ''
+      OR m.`full_name`   LIKE CONCAT('%', TRIM(p_q), '%')
+      OR m.`member_code` LIKE CONCAT('%', TRIM(p_q), '%')
+      OR m.`phone`       LIKE CONCAT('%', TRIM(p_q), '%')
+    )
+  GROUP BY m.`id`, m.`member_code`, m.`full_name`, m.`phone`
+  ORDER BY m.`full_name`
+  LIMIT 50;
+END$$
+
+DELIMITER ;
 
 -- --------------------------------------------------------
 
@@ -71,49 +390,50 @@ CREATE TABLE `beauty_services` (
   `percent_value` tinyint(3) UNSIGNED DEFAULT NULL COMMENT 'persen untuk price_type = percent',
   `notes` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `sort_order` tinyint(3) UNSIGNED NOT NULL DEFAULT '0',
-  `is_active` tinyint(1) NOT NULL DEFAULT '1'
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `is_featured` tinyint(1) NOT NULL DEFAULT '0'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 --
 -- Dumping data for table `beauty_services`
 --
 
-INSERT INTO `beauty_services` (`id`, `category_id`, `name`, `description`, `price_type`, `price`, `price_max`, `percent_value`, `notes`, `sort_order`, `is_active`) VALUES
-(1, 1, 'Classic Lash', NULL, 'fixed', 150000, NULL, NULL, NULL, 1, 1),
-(2, 1, 'Double Lash', NULL, 'fixed', 200000, NULL, NULL, NULL, 2, 1),
-(3, 1, 'Volume Lash', NULL, 'fixed', 250000, NULL, NULL, NULL, 3, 1),
-(4, 1, 'Russian Lash', NULL, 'fixed', 300000, NULL, NULL, NULL, 4, 1),
-(5, 1, 'Anime Lash', 'Include under lash', 'fixed', 350000, NULL, NULL, NULL, 5, 1),
-(6, 1, 'Meduza Lash', 'Include under lash', 'fixed', 500000, NULL, NULL, NULL, 6, 1),
-(7, 2, 'Lashlift & Tint', 'Natural lash, include Black Tint & keratin made in Korea', 'fixed', 185000, NULL, NULL, NULL, 1, 1),
-(8, 3, 'Retouch', NULL, 'percent', NULL, NULL, 50, NULL, 1, 1),
-(9, 3, 'Removal From Bloome/Other Salon', NULL, 'fixed', 50000, NULL, NULL, NULL, 2, 1),
-(10, 3, 'Guarantee 3 Days Treatment', NULL, 'free', 0, NULL, NULL, NULL, 3, 1),
-(11, 4, 'Brow Shading', 'Include retouch', 'fixed', 1499000, NULL, NULL, NULL, 1, 1),
-(12, 4, 'Brow Removal', '2x visit', 'fixed', 999000, NULL, NULL, NULL, 2, 1),
-(13, 4, 'Lip Blush', 'Include retouch', 'fixed', 1499000, NULL, NULL, NULL, 3, 1),
-(14, 5, 'Manicure', 'Wash salt, trimming, buffing, shaping, cuticle care, vitamin, lotion', 'fixed', 80000, NULL, NULL, NULL, 1, 1),
-(15, 5, 'Basic Gel / Basic Gel Halal', 'Gel polish only for 10 fingers', 'fixed', 150000, NULL, NULL, NULL, 2, 1),
-(16, 5, 'Dry/Express Manicure + Basic Gel', 'Trimming, buffing, shaping, cuticle care, vitamin', 'fixed', 200000, NULL, NULL, NULL, 3, 1),
-(17, 5, 'Dry/Express Manicure + Cat Eye Nails', 'Trimming, buffing, shaping, cuticle care, gel cat eye, vitamin', 'fixed', 230000, NULL, NULL, NULL, 4, 1),
-(18, 5, 'Dry/Express Manicure + Glitter Nails', 'Trimming, buffing, shaping, cuticle care, gel glitter, vitamin', 'fixed', 230000, NULL, NULL, NULL, 5, 1),
-(19, 6, 'Easy', 'Glitter, Foil, Strengthen Gel, Dots, Cat Eyes, Sticker', 'fixed', 5000, NULL, NULL, NULL, 1, 1),
-(20, 6, 'Medium', 'Ombre, Chrome, Korean Glass, French, Blush, Swirl, Simple Marble', 'fixed', 10000, NULL, NULL, NULL, 2, 1),
-(21, 6, 'Advance', 'Advance Marble, Lines, Gold Flakes, Sea Shell, Dry Flower', 'fixed', 20000, NULL, NULL, NULL, 3, 1),
-(22, 6, 'Hard', '3D Flower, 3D Acc, Character, Pattern', 'range', 25000, 50000, NULL, NULL, 4, 1),
-(23, 7, 'SPA Pedicure', 'Foot spa using bath salt, scrub, cleaning, trimming, buffing, shaping, cuticle care, shining, vitamin, lotion', 'fixed', 100000, NULL, NULL, NULL, 1, 1),
-(24, 7, 'Basic Gel / Basic Gel Halal', 'Gel polish only for 10 fingers', 'fixed', 150000, NULL, NULL, NULL, 2, 1),
-(25, 7, 'Dry/Express Manicure + Basic Gel', 'Trimming, buffing, shaping, cuticle care, gel polish, vitamin', 'fixed', 210000, NULL, NULL, NULL, 3, 1),
-(26, 7, 'Callus Treatment', 'Soaking corns and calluses in warm, soapy water softens them', 'fixed', 120000, NULL, NULL, NULL, 4, 1),
-(27, 7, 'Full Foot Treatment', 'Spa pedicure + Basic Gel + Callus Treatment', 'fixed', 330000, NULL, NULL, NULL, 5, 1),
-(28, 8, 'Small Swarovski', NULL, 'fixed', 10000, NULL, NULL, NULL, 1, 1),
-(29, 8, 'Pearl', NULL, 'fixed', 5000, NULL, NULL, NULL, 2, 1),
-(30, 8, 'Rhinestones', NULL, 'fixed', 5000, NULL, NULL, NULL, 3, 1),
-(31, 8, 'Charm', NULL, 'fixed', 25000, NULL, NULL, NULL, 4, 1),
-(32, 9, 'Remove Gel Color', NULL, 'fixed', 40000, NULL, NULL, NULL, 1, 1),
-(33, 9, 'Remove EXT From Bloome', NULL, 'fixed', 70000, NULL, NULL, NULL, 2, 1),
-(34, 9, 'Remove EXT From Another', NULL, 'fixed', 100000, NULL, NULL, NULL, 3, 1),
-(35, 10, 'Softgel Tips For 10 Fingers', NULL, 'fixed', 100000, NULL, NULL, NULL, 1, 1);
+INSERT INTO `beauty_services` (`id`, `category_id`, `name`, `description`, `price_type`, `price`, `price_max`, `percent_value`, `notes`, `sort_order`, `is_active`, `is_featured`) VALUES
+(1, 1, 'Classic Lash', NULL, 'fixed', 150000, NULL, NULL, NULL, 1, 1, 0),
+(2, 1, 'Double Lash', NULL, 'fixed', 200000, NULL, NULL, NULL, 2, 1, 0),
+(3, 1, 'Volume Lash', NULL, 'fixed', 250000, NULL, NULL, NULL, 3, 1, 0),
+(4, 1, 'Russian Lash', NULL, 'fixed', 300000, NULL, NULL, NULL, 4, 1, 0),
+(5, 1, 'Anime Lash', 'Include under lash', 'fixed', 350000, NULL, NULL, NULL, 5, 1, 0),
+(6, 1, 'Meduza Lash', 'Include under lash', 'fixed', 500000, NULL, NULL, NULL, 6, 1, 0),
+(7, 2, 'Lashlift & Tint', 'Natural lash, include Black Tint & keratin made in Korea', 'fixed', 185000, NULL, NULL, NULL, 1, 1, 1),
+(8, 3, 'Retouch', NULL, 'percent', NULL, NULL, 50, NULL, 1, 1, 0),
+(9, 3, 'Removal From Bloome/Other Salon', NULL, 'fixed', 50000, NULL, NULL, NULL, 2, 1, 0),
+(10, 3, 'Guarantee 3 Days Treatment', NULL, 'free', 0, NULL, NULL, NULL, 3, 1, 0),
+(11, 4, 'Brow Shading', 'Include retouch', 'fixed', 1499000, NULL, NULL, NULL, 1, 1, 0),
+(12, 4, 'Brow Removal', '2x visit', 'fixed', 999000, NULL, NULL, NULL, 2, 1, 0),
+(13, 4, 'Lip Blush', 'Include retouch', 'fixed', 1499000, NULL, NULL, NULL, 3, 1, 0),
+(14, 5, 'Manicure', 'Wash salt, trimming, buffing, shaping, cuticle care, vitamin, lotion', 'fixed', 80000, NULL, NULL, NULL, 1, 1, 1),
+(15, 5, 'Basic Gel / Basic Gel Halal', 'Gel polish only for 10 fingers', 'fixed', 150000, NULL, NULL, NULL, 2, 1, 0),
+(16, 5, 'Dry/Express Manicure + Basic Gel', 'Trimming, buffing, shaping, cuticle care, vitamin', 'fixed', 200000, NULL, NULL, NULL, 3, 1, 0),
+(17, 5, 'Dry/Express Manicure + Cat Eye Nails', 'Trimming, buffing, shaping, cuticle care, gel cat eye, vitamin', 'fixed', 230000, NULL, NULL, NULL, 4, 1, 0),
+(18, 5, 'Dry/Express Manicure + Glitter Nails', 'Trimming, buffing, shaping, cuticle care, gel glitter, vitamin', 'fixed', 230000, NULL, NULL, NULL, 5, 1, 0),
+(19, 6, 'Easy', 'Glitter, Foil, Strengthen Gel, Dots, Cat Eyes, Sticker', 'fixed', 5000, NULL, NULL, NULL, 1, 1, 0),
+(20, 6, 'Medium', 'Ombre, Chrome, Korean Glass, French, Blush, Swirl, Simple Marble', 'fixed', 10000, NULL, NULL, NULL, 2, 1, 0),
+(21, 6, 'Advance', 'Advance Marble, Lines, Gold Flakes, Sea Shell, Dry Flower', 'fixed', 20000, NULL, NULL, NULL, 3, 1, 0),
+(22, 6, 'Hard', '3D Flower, 3D Acc, Character, Pattern', 'range', 25000, 50000, NULL, NULL, 4, 1, 0),
+(23, 7, 'SPA Pedicure', 'Foot spa using bath salt, scrub, cleaning, trimming, buffing, shaping, cuticle care, shining, vitamin, lotion', 'fixed', 100000, NULL, NULL, NULL, 1, 1, 1),
+(24, 7, 'Basic Gel / Basic Gel Halal', 'Gel polish only for 10 fingers', 'fixed', 150000, NULL, NULL, NULL, 2, 1, 0),
+(25, 7, 'Dry/Express Manicure + Basic Gel', 'Trimming, buffing, shaping, cuticle care, gel polish, vitamin', 'fixed', 210000, NULL, NULL, NULL, 3, 1, 0),
+(26, 7, 'Callus Treatment', 'Soaking corns and calluses in warm, soapy water softens them', 'fixed', 120000, NULL, NULL, NULL, 4, 1, 0),
+(27, 7, 'Full Foot Treatment', 'Spa pedicure + Basic Gel + Callus Treatment', 'fixed', 330000, NULL, NULL, NULL, 5, 1, 0),
+(28, 8, 'Small Swarovski', NULL, 'fixed', 10000, NULL, NULL, NULL, 1, 1, 0),
+(29, 8, 'Pearl', NULL, 'fixed', 5000, NULL, NULL, NULL, 2, 1, 0),
+(30, 8, 'Rhinestones', NULL, 'fixed', 5000, NULL, NULL, NULL, 3, 1, 0),
+(31, 8, 'Charm', NULL, 'fixed', 25000, NULL, NULL, NULL, 4, 1, 0),
+(32, 9, 'Remove Gel Color', NULL, 'fixed', 40000, NULL, NULL, NULL, 1, 1, 0),
+(33, 9, 'Remove EXT From Bloome', NULL, 'fixed', 70000, NULL, NULL, NULL, 2, 1, 0),
+(34, 9, 'Remove EXT From Another', NULL, 'fixed', 100000, NULL, NULL, NULL, 3, 1, 0),
+(35, 10, 'Softgel Tips For 10 Fingers', NULL, 'fixed', 100000, NULL, NULL, NULL, 1, 1, 0);
 
 -- --------------------------------------------------------
 
@@ -376,8 +696,8 @@ CREATE TABLE `promos` (
 --
 
 INSERT INTO `promos` (`id`, `code`, `discipline`, `title`, `tagline`, `price`, `price_unit`, `session_count`, `participants_min`, `participants_max`, `available_days`, `valid_from`, `valid_until`, `terms_note`, `image_path`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 'PILATES-1010', 'pilates', '10.10 Pilates Deal', 'Your 10.10 reset', 190000, '2 session', 2, NULL, NULL, NULL, NULL, NULL, 'DM for T&C and details', '10.10-pilates.jpeg', 1, '2026-10-10 17:37:54', '2026-10-10 17:37:54'),
-(2, 'YOGA-AFTER-OFFICE', 'yoga', 'Yoga After Office Hours', NULL, 700000, 'group', NULL, 8, 11, 'Monday-Friday', '2026-10-01', '2026-10-31', 'Valid throughout October 2026. DM for T&C and details', 'yoga-promo.jpeg', 1, '2026-10-10 17:37:54', '2026-10-10 17:37:54');
+(1, 'PILATES-1010', 'pilates', '10.10 Pilates Deal', 'Your 10.10 reset', 190000, '2 session', 2, NULL, NULL, NULL, '2026-10-10', '2026-10-31', 'DM for T&C and details', '10.10-pilates.jpeg', 1, '2026-10-10 17:37:54', '2026-10-12 09:20:17'),
+(2, 'YOGA-AFTER-OFFICE', 'yoga', 'Yoga After Office Hours', NULL, 700000, 'group', NULL, 8, 11, 'Monday-Friday', '2026-10-01', '2026-10-31', 'Valid throughout October 2026. DM for T&C and details', 'promo-uploads/12ddc1cd66cd1fd36962ea880c0bcdfd.jpeg', 1, '2026-10-10 17:37:54', '2026-10-12 09:40:21');
 
 -- --------------------------------------------------------
 
@@ -442,6 +762,7 @@ CREATE TABLE `studio_bookings` (
   `public_token` char(40) COLLATE utf8mb4_unicode_ci NOT NULL,
   `service` enum('pilates','yoga','beauty') COLLATE utf8mb4_unicode_ci NOT NULL,
   `package_id` int(10) UNSIGNED NOT NULL,
+  `promo_code` varchar(40) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `package_name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
   `package_kind` varchar(20) COLLATE utf8mb4_unicode_ci NOT NULL,
   `session_count` smallint(5) UNSIGNED NOT NULL,
@@ -470,10 +791,12 @@ CREATE TABLE `studio_bookings` (
 -- Dumping data for table `studio_bookings`
 --
 
-INSERT INTO `studio_bookings` (`id`, `public_token`, `service`, `package_id`, `package_name`, `package_kind`, `session_count`, `bonus_sessions`, `participants`, `validity_days`, `price`, `full_name`, `phone`, `health_notes`, `source`, `source_other`, `statement_file`, `payment_method`, `payment_status`, `booking_status`, `receipt_file`, `expires_at`, `created_at`, `paid_at`, `verified_by`, `verified_at`) VALUES
-(2, '6c51f89be502b157b5d7cb34946e08e7c3786c7a', 'pilates', 7, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'Uji pilih bebas', '081234567890', NULL, 'Instagram', NULL, NULL, 'transfer', 'rejected', 'cancelled', NULL, '2026-10-12 11:46:04', '2026-10-11 11:46:04', NULL, 1, '2026-10-11 12:05:09'),
-(3, '2797c7a8829a57b5324d554c1045e167511434c1', 'pilates', 7, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'Preview multi sesi', '081234567890', NULL, 'Instagram', NULL, NULL, 'transfer', 'paid', 'confirmed', 'receipt-229c1d40607fd5670e3e97aae6234206c2e905ba.pdf', '2026-10-12 11:48:45', '2026-10-11 11:48:45', '2026-10-11 11:55:29', 1, '2026-10-11 11:55:29'),
-(4, '506d13fe93aebac226beb26da9c78213c4c76bb5', 'pilates', 7, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'b', '+6285945100296', NULL, 'TikTok', NULL, NULL, 'transfer', 'pending', 'pending_payment', NULL, '2026-10-12 21:01:46', '2026-10-11 21:01:46', NULL, NULL, NULL);
+INSERT INTO `studio_bookings` (`id`, `public_token`, `service`, `package_id`, `promo_code`, `package_name`, `package_kind`, `session_count`, `bonus_sessions`, `participants`, `validity_days`, `price`, `full_name`, `phone`, `health_notes`, `source`, `source_other`, `statement_file`, `payment_method`, `payment_status`, `booking_status`, `receipt_file`, `expires_at`, `created_at`, `paid_at`, `verified_by`, `verified_at`) VALUES
+(2, '6c51f89be502b157b5d7cb34946e08e7c3786c7a', 'pilates', 7, NULL, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'Uji pilih bebas', '081234567890', NULL, 'Instagram', NULL, NULL, 'transfer', 'rejected', 'cancelled', NULL, '2026-10-12 11:46:04', '2026-10-11 11:46:04', NULL, 1, '2026-10-11 12:05:09'),
+(3, '2797c7a8829a57b5324d554c1045e167511434c1', 'pilates', 7, NULL, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'Preview multi sesi', '081234567890', NULL, 'Instagram', NULL, NULL, 'transfer', 'paid', 'confirmed', 'receipt-229c1d40607fd5670e3e97aae6234206c2e905ba.pdf', '2026-10-12 11:48:45', '2026-10-11 11:48:45', '2026-10-11 11:55:29', 1, '2026-10-11 11:55:29'),
+(4, '506d13fe93aebac226beb26da9c78213c4c76bb5', 'pilates', 7, NULL, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'b', '+6285945100296', NULL, 'TikTok', NULL, NULL, 'transfer', 'pending', 'pending_payment', NULL, '2026-10-12 21:01:46', '2026-10-11 21:01:46', NULL, NULL, NULL),
+(5, 'a91793170ae2731dbce3b9da7f6d1ffc091a4cf5', 'pilates', 7, NULL, '3 Session', 'membership · group', 3, 0, 1, 21, 289000, 'Bagas Meriko', '+6285945100296', NULL, 'Lainnya', 'brosur', NULL, 'transfer', 'paid', 'cancelled', 'receipt-ca8f141d58358dff5b8ce38c7d11d1eca10e93da.pdf', '2026-10-13 03:29:50', '2026-10-12 03:29:50', '2026-10-12 03:32:48', 1, '2026-10-12 03:32:48'),
+(6, 'f5d98ebd1533f378eba2bb8fc015c7f3d45eb6dd', 'pilates', 1, 'PILATES-1010', '10.10 Pilates Deal', 'session · group', 2, 0, 1, NULL, 190000, 'b', '089684634430', NULL, 'TikTok', NULL, NULL, 'transfer', 'rejected', 'cancelled', 'receipt-e652f7aea6050e10ef9d853744dbecd67851a774.pdf', '2026-10-13 16:34:28', '2026-10-12 16:34:28', NULL, 1, '2026-10-12 18:48:18');
 
 -- --------------------------------------------------------
 
@@ -507,7 +830,66 @@ INSERT INTO `studio_booking_sessions` (`id`, `booking_id`, `schedule_id`, `sessi
 (7, 3, 9, '2026-10-12', '16:00:00', 240, 'Coach Dinda', 'reformer', 1, 0),
 (8, 4, 13, '2026-10-13', '07:00:00', 480, 'Coach Diza', 'reformer', 1, 0),
 (9, 4, 21, '2026-10-13', '16:00:00', 180, 'Coach Diza', 'reformer', 1, 0),
-(10, 4, 24, '2026-10-13', '20:00:00', 60, 'Coach Diza', 'reformer', 1, 0);
+(10, 4, 24, '2026-10-13', '20:00:00', 60, 'Coach Diza', 'reformer', 1, 0),
+(11, 5, 37, '2026-10-22', '07:00:00', 360, 'Coach Riefaldi', 'reformer', 1, 0),
+(12, 5, 43, '2026-10-22', '14:00:00', 360, 'Coach Dinda', 'reformer', 1, 0),
+(13, 5, 37, '2026-11-12', '07:00:00', 360, 'Coach Riefaldi', 'reformer', 1, 0),
+(14, 6, 13, '2026-10-13', '07:00:00', 480, 'Coach Diza', 'reformer', 1, 0),
+(15, 6, 58, '2026-10-30', '17:00:00', 180, 'Coach Diza', 'reformer', 1, 0);
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `studio_gallery`
+--
+
+CREATE TABLE `studio_gallery` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `image_path` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `alt_text` varchar(160) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `sort_order` smallint(5) UNSIGNED NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `studio_gallery`
+--
+
+INSERT INTO `studio_gallery` (`id`, `image_path`, `alt_text`, `sort_order`, `is_active`, `created_at`, `updated_at`) VALUES
+(1, 'gallery-uploads/bca93aac9a7293f8d94813cc099dbd42.jpeg', 'Sesi Pilates reformer di BloomÃ¨ Studio', 1, 1, '2026-10-12 10:33:27', '2026-10-12 10:44:59'),
+(2, 'gallery-studio-02.jpg', 'Ruang kelas yoga BloomÃ¨ Studio', 2, 1, '2026-10-12 10:33:27', '2026-10-12 10:33:27'),
+(3, 'gallery-studio-03.jpg', 'Area lounge BloomÃ¨ Studio', 3, 1, '2026-10-12 10:33:27', '2026-10-12 10:33:27'),
+(4, 'gallery-studio-04.jpg', 'Area perawatan beauty BloomÃ¨ Studio', 4, 1, '2026-10-12 10:33:27', '2026-10-12 10:33:27'),
+(5, 'gallery-uploads/f3633079068b3e4da4f1380e950043ea.jpg', 'Sesi Pilates reformer di BloomÃ¨ Studio', 5, 1, '2026-10-12 10:45:26', '2026-10-12 10:45:26');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `studio_reviews`
+--
+
+CREATE TABLE `studio_reviews` (
+  `id` int(10) UNSIGNED NOT NULL,
+  `name` varchar(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `review_text` varchar(1000) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `rating` tinyint(3) UNSIGNED NOT NULL DEFAULT '5',
+  `source` varchar(40) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'Google Review',
+  `sort_order` smallint(5) UNSIGNED NOT NULL DEFAULT '0',
+  `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `studio_reviews`
+--
+
+INSERT INTO `studio_reviews` (`id`, `name`, `review_text`, `rating`, `source`, `sort_order`, `is_active`, `created_at`, `updated_at`) VALUES
+(1, 'Aulia Askha', 'studionya comfortable, wangi dan nyaman untuk work out & treatment. Kak Dinda, best coach! super duper ramah banget. highly recommended', 5, 'Google Review', 1, 1, '2026-10-12 10:33:27', '2026-10-12 10:51:53'),
+(2, 'Cut Alia Masturina', 'Warga cinere must try, lokasi nya ada di ruko blkg cibel. Oke dan affordable, ada meni pedi nya juga', 5, 'Google Review', 2, 1, '2026-10-12 10:33:27', '2026-10-12 10:33:27'),
+(3, 'Rae Taylor', 'Studio baru di cinere yang estetik banget, lengkap ada yoga ada pilates, best banget â¤ï¸', 5, 'Google Review', 3, 1, '2026-10-12 10:33:27', '2026-10-12 10:33:27');
 
 -- --------------------------------------------------------
 
@@ -566,7 +948,7 @@ CREATE TABLE `users` (
 --
 
 INSERT INTO `users` (`id`, `username`, `full_name`, `role_id`, `password_salt`, `password_hash`, `must_change_password`, `is_active`, `last_login_at`, `created_at`, `updated_at`) VALUES
-(1, 'admin@bloomestudio.id', 'Admin', 1, '4473e573e7f73de4', '4d369b09502fc0e1ec68819e5dc5e1899533800a69b529f2ee03f37cf6864b6b', 1, 1, '2026-10-11 20:57:04', '2026-10-10 17:37:54', '2026-10-11 13:57:04'),
+(1, 'admin@bloomestudio.id', 'Admin', 1, '1c6be7fa78fcfb1b', 'c130ed2b6778f8046518ea9b0c96613b8ff6acdde9577cd8c52fff1f0951a412', 0, 1, '2026-10-12 18:51:05', '2026-10-10 17:37:54', '2026-10-12 11:51:05'),
 (2, 'diza', 'Diza', 1, '404b0cc9e9fa61e9', 'c2c9b4cd0fe247ecbb95cf5499fee41b80e434ee9c196f1bf0a322a2b037a13d', 1, 1, NULL, '2026-10-10 17:37:54', '2026-10-11 12:52:21'),
 (3, 'sarah', 'Sarah', 1, '7b4488693d992398', 'e48ede6514b0d0e0f2863062db3bfe13ee06c34419df1ed2fc446d7d2f87c66b', 1, 1, NULL, '2026-10-10 17:37:54', '2026-10-11 12:52:21'),
 (4, 'finance', 'Finance', 2, '6f53e93b8156f775', '8be25259348d628f9e6ada0834e5680a3b9a8363001b6e12dbcdf06d616d5d33', 1, 1, NULL, '2026-10-10 17:37:54', '2026-10-11 12:52:21');
@@ -748,6 +1130,18 @@ ALTER TABLE `studio_booking_sessions`
   ADD KEY `idx_booked_schedule_date` (`schedule_id`,`session_date`,`start_time`);
 
 --
+-- Indexes for table `studio_gallery`
+--
+ALTER TABLE `studio_gallery`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `studio_reviews`
+--
+ALTER TABLE `studio_reviews`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `transactions`
 --
 ALTER TABLE `transactions`
@@ -828,7 +1222,7 @@ ALTER TABLE `pilates_pricing`
 -- AUTO_INCREMENT for table `promos`
 --
 ALTER TABLE `promos`
-  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `roles`
@@ -840,13 +1234,25 @@ ALTER TABLE `roles`
 -- AUTO_INCREMENT for table `studio_bookings`
 --
 ALTER TABLE `studio_bookings`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `studio_booking_sessions`
 --
 ALTER TABLE `studio_booking_sessions`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
+  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+
+--
+-- AUTO_INCREMENT for table `studio_gallery`
+--
+ALTER TABLE `studio_gallery`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- AUTO_INCREMENT for table `studio_reviews`
+--
+ALTER TABLE `studio_reviews`
+  MODIFY `id` int(10) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `transactions`
@@ -913,657 +1319,6 @@ ALTER TABLE `transactions`
 --
 ALTER TABLE `users`
   ADD CONSTRAINT `fk_users_role` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`);
---
--- Database: `phpmyadmin`
---
-CREATE DATABASE IF NOT EXISTS `phpmyadmin` DEFAULT CHARACTER SET utf8 COLLATE utf8_bin;
-USE `phpmyadmin`;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__bookmark`
---
-
-CREATE TABLE `pma__bookmark` (
-  `id` int(11) NOT NULL,
-  `dbase` varchar(255) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `user` varchar(255) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `label` varchar(255) CHARACTER SET utf8 NOT NULL DEFAULT '',
-  `query` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Bookmarks';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__central_columns`
---
-
-CREATE TABLE `pma__central_columns` (
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `col_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `col_type` varchar(64) COLLATE utf8_bin NOT NULL,
-  `col_length` text COLLATE utf8_bin,
-  `col_collation` varchar(64) COLLATE utf8_bin NOT NULL,
-  `col_isNull` tinyint(1) NOT NULL,
-  `col_extra` varchar(255) COLLATE utf8_bin DEFAULT '',
-  `col_default` text COLLATE utf8_bin
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Central list of columns';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__column_info`
---
-
-CREATE TABLE `pma__column_info` (
-  `id` int(5) UNSIGNED NOT NULL,
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `table_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `column_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `comment` varchar(255) CHARACTER SET utf8 NOT NULL DEFAULT '',
-  `mimetype` varchar(255) CHARACTER SET utf8 NOT NULL DEFAULT '',
-  `transformation` varchar(255) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `transformation_options` varchar(255) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `input_transformation` varchar(255) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `input_transformation_options` varchar(255) COLLATE utf8_bin NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Column information for phpMyAdmin';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__designer_settings`
---
-
-CREATE TABLE `pma__designer_settings` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `settings_data` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Settings related to Designer';
-
---
--- Dumping data for table `pma__designer_settings`
---
-
-INSERT INTO `pma__designer_settings` (`username`, `settings_data`) VALUES
-('root', '{\"snap_to_grid\":\"off\",\"angular_direct\":\"direct\",\"relation_lines\":\"true\"}');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__export_templates`
---
-
-CREATE TABLE `pma__export_templates` (
-  `id` int(5) UNSIGNED NOT NULL,
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `export_type` varchar(10) COLLATE utf8_bin NOT NULL,
-  `template_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `template_data` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Saved export templates';
-
---
--- Dumping data for table `pma__export_templates`
---
-
-INSERT INTO `pma__export_templates` (`id`, `username`, `export_type`, `template_name`, `template_data`) VALUES
-(1, 'root', 'database', 'bloome_db', '{\"quick_or_custom\":\"quick\",\"what\":\"sql\",\"structure_or_data_forced\":\"0\",\"table_select[]\":[\"bookings\",\"customers\",\"kelas\",\"laporan_keuangan\",\"payments\",\"users\"],\"table_structure[]\":[\"bookings\",\"customers\",\"kelas\",\"laporan_keuangan\",\"payments\",\"users\"],\"table_data[]\":[\"bookings\",\"customers\",\"kelas\",\"laporan_keuangan\",\"payments\",\"users\"],\"aliases_new\":\"\",\"output_format\":\"sendit\",\"filename_template\":\"@DATABASE@\",\"remember_template\":\"on\",\"charset\":\"utf-8\",\"compression\":\"none\",\"maxsize\":\"\",\"codegen_structure_or_data\":\"data\",\"codegen_format\":\"0\",\"csv_separator\":\",\",\"csv_enclosed\":\"\\\"\",\"csv_escaped\":\"\\\"\",\"csv_terminated\":\"AUTO\",\"csv_null\":\"NULL\",\"csv_structure_or_data\":\"data\",\"excel_null\":\"NULL\",\"excel_columns\":\"something\",\"excel_edition\":\"win\",\"excel_structure_or_data\":\"data\",\"json_structure_or_data\":\"data\",\"json_unicode\":\"something\",\"latex_caption\":\"something\",\"latex_structure_or_data\":\"structure_and_data\",\"latex_structure_caption\":\"Structure of table @TABLE@\",\"latex_structure_continued_caption\":\"Structure of table @TABLE@ (continued)\",\"latex_structure_label\":\"tab:@TABLE@-structure\",\"latex_relation\":\"something\",\"latex_comments\":\"something\",\"latex_mime\":\"something\",\"latex_columns\":\"something\",\"latex_data_caption\":\"Content of table @TABLE@\",\"latex_data_continued_caption\":\"Content of table @TABLE@ (continued)\",\"latex_data_label\":\"tab:@TABLE@-data\",\"latex_null\":\"\\\\textit{NULL}\",\"mediawiki_structure_or_data\":\"structure_and_data\",\"mediawiki_caption\":\"something\",\"mediawiki_headers\":\"something\",\"htmlword_structure_or_data\":\"structure_and_data\",\"htmlword_null\":\"NULL\",\"ods_null\":\"NULL\",\"ods_structure_or_data\":\"data\",\"odt_structure_or_data\":\"structure_and_data\",\"odt_relation\":\"something\",\"odt_comments\":\"something\",\"odt_mime\":\"something\",\"odt_columns\":\"something\",\"odt_null\":\"NULL\",\"pdf_report_title\":\"\",\"pdf_structure_or_data\":\"structure_and_data\",\"phparray_structure_or_data\":\"data\",\"sql_include_comments\":\"something\",\"sql_header_comment\":\"\",\"sql_use_transaction\":\"something\",\"sql_compatibility\":\"NONE\",\"sql_structure_or_data\":\"structure_and_data\",\"sql_create_table\":\"something\",\"sql_auto_increment\":\"something\",\"sql_create_view\":\"something\",\"sql_procedure_function\":\"something\",\"sql_create_trigger\":\"something\",\"sql_backquotes\":\"something\",\"sql_type\":\"INSERT\",\"sql_insert_syntax\":\"both\",\"sql_max_query_size\":\"50000\",\"sql_hex_for_binary\":\"something\",\"sql_utc_time\":\"something\",\"texytext_structure_or_data\":\"structure_and_data\",\"texytext_null\":\"NULL\",\"xml_structure_or_data\":\"data\",\"xml_export_events\":\"something\",\"xml_export_functions\":\"something\",\"xml_export_procedures\":\"something\",\"xml_export_tables\":\"something\",\"xml_export_triggers\":\"something\",\"xml_export_views\":\"something\",\"xml_export_contents\":\"something\",\"yaml_structure_or_data\":\"data\",\"\":null,\"lock_tables\":null,\"as_separate_files\":null,\"csv_removeCRLF\":null,\"csv_columns\":null,\"excel_removeCRLF\":null,\"json_pretty_print\":null,\"htmlword_columns\":null,\"ods_columns\":null,\"sql_dates\":null,\"sql_relation\":null,\"sql_mime\":null,\"sql_disable_fk\":null,\"sql_views_as_tables\":null,\"sql_metadata\":null,\"sql_create_database\":null,\"sql_drop_table\":null,\"sql_if_not_exists\":null,\"sql_truncate\":null,\"sql_delayed\":null,\"sql_ignore\":null,\"texytext_columns\":null}'),
-(2, 'root', 'database', 'bloome_studio', '{\"quick_or_custom\":\"quick\",\"what\":\"sql\",\"structure_or_data_forced\":\"0\",\"table_select[]\":[\"beauty_categories\",\"beauty_services\",\"class_schedules\",\"coaches\",\"members\",\"permissions\",\"pilates_pricing\",\"promos\",\"roles\",\"role_permissions\",\"transactions\",\"users\",\"v_transaction_detail\",\"v_user_permissions\",\"yoga_pricing\"],\"table_structure[]\":[\"beauty_categories\",\"beauty_services\",\"class_schedules\",\"coaches\",\"members\",\"permissions\",\"pilates_pricing\",\"promos\",\"roles\",\"role_permissions\",\"transactions\",\"users\",\"v_transaction_detail\",\"v_user_permissions\",\"yoga_pricing\"],\"table_data[]\":[\"beauty_categories\",\"beauty_services\",\"class_schedules\",\"coaches\",\"members\",\"permissions\",\"pilates_pricing\",\"promos\",\"roles\",\"role_permissions\",\"transactions\",\"users\",\"v_transaction_detail\",\"v_user_permissions\",\"yoga_pricing\"],\"aliases_new\":\"\",\"output_format\":\"sendit\",\"filename_template\":\"@DATABASE@\",\"remember_template\":\"on\",\"charset\":\"utf-8\",\"compression\":\"none\",\"maxsize\":\"\",\"codegen_structure_or_data\":\"data\",\"codegen_format\":\"0\",\"csv_separator\":\",\",\"csv_enclosed\":\"\\\"\",\"csv_escaped\":\"\\\"\",\"csv_terminated\":\"AUTO\",\"csv_null\":\"NULL\",\"csv_structure_or_data\":\"data\",\"excel_null\":\"NULL\",\"excel_columns\":\"something\",\"excel_edition\":\"win\",\"excel_structure_or_data\":\"data\",\"json_structure_or_data\":\"data\",\"json_unicode\":\"something\",\"latex_caption\":\"something\",\"latex_structure_or_data\":\"structure_and_data\",\"latex_structure_caption\":\"Structure of table @TABLE@\",\"latex_structure_continued_caption\":\"Structure of table @TABLE@ (continued)\",\"latex_structure_label\":\"tab:@TABLE@-structure\",\"latex_relation\":\"something\",\"latex_comments\":\"something\",\"latex_mime\":\"something\",\"latex_columns\":\"something\",\"latex_data_caption\":\"Content of table @TABLE@\",\"latex_data_continued_caption\":\"Content of table @TABLE@ (continued)\",\"latex_data_label\":\"tab:@TABLE@-data\",\"latex_null\":\"\\\\textit{NULL}\",\"mediawiki_structure_or_data\":\"structure_and_data\",\"mediawiki_caption\":\"something\",\"mediawiki_headers\":\"something\",\"htmlword_structure_or_data\":\"structure_and_data\",\"htmlword_null\":\"NULL\",\"ods_null\":\"NULL\",\"ods_structure_or_data\":\"data\",\"odt_structure_or_data\":\"structure_and_data\",\"odt_relation\":\"something\",\"odt_comments\":\"something\",\"odt_mime\":\"something\",\"odt_columns\":\"something\",\"odt_null\":\"NULL\",\"pdf_report_title\":\"\",\"pdf_structure_or_data\":\"structure_and_data\",\"phparray_structure_or_data\":\"data\",\"sql_include_comments\":\"something\",\"sql_header_comment\":\"\",\"sql_use_transaction\":\"something\",\"sql_compatibility\":\"NONE\",\"sql_structure_or_data\":\"structure_and_data\",\"sql_create_table\":\"something\",\"sql_auto_increment\":\"something\",\"sql_create_view\":\"something\",\"sql_procedure_function\":\"something\",\"sql_create_trigger\":\"something\",\"sql_backquotes\":\"something\",\"sql_type\":\"INSERT\",\"sql_insert_syntax\":\"both\",\"sql_max_query_size\":\"50000\",\"sql_hex_for_binary\":\"something\",\"sql_utc_time\":\"something\",\"texytext_structure_or_data\":\"structure_and_data\",\"texytext_null\":\"NULL\",\"xml_structure_or_data\":\"data\",\"xml_export_events\":\"something\",\"xml_export_functions\":\"something\",\"xml_export_procedures\":\"something\",\"xml_export_tables\":\"something\",\"xml_export_triggers\":\"something\",\"xml_export_views\":\"something\",\"xml_export_contents\":\"something\",\"yaml_structure_or_data\":\"data\",\"\":null,\"lock_tables\":null,\"as_separate_files\":null,\"csv_removeCRLF\":null,\"csv_columns\":null,\"excel_removeCRLF\":null,\"json_pretty_print\":null,\"htmlword_columns\":null,\"ods_columns\":null,\"sql_dates\":null,\"sql_relation\":null,\"sql_mime\":null,\"sql_disable_fk\":null,\"sql_views_as_tables\":null,\"sql_metadata\":null,\"sql_create_database\":null,\"sql_drop_table\":null,\"sql_if_not_exists\":null,\"sql_truncate\":null,\"sql_delayed\":null,\"sql_ignore\":null,\"texytext_columns\":null}');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__favorite`
---
-
-CREATE TABLE `pma__favorite` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `tables` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Favorite tables';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__history`
---
-
-CREATE TABLE `pma__history` (
-  `id` bigint(20) UNSIGNED NOT NULL,
-  `username` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `db` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `table` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `timevalue` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `sqlquery` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='SQL history for phpMyAdmin';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__navigationhiding`
---
-
-CREATE TABLE `pma__navigationhiding` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `item_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `item_type` varchar(64) COLLATE utf8_bin NOT NULL,
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `table_name` varchar(64) COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Hidden items of navigation tree';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__pdf_pages`
---
-
-CREATE TABLE `pma__pdf_pages` (
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `page_nr` int(10) UNSIGNED NOT NULL,
-  `page_descr` varchar(50) CHARACTER SET utf8 NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='PDF relation pages for phpMyAdmin';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__recent`
---
-
-CREATE TABLE `pma__recent` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `tables` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Recently accessed tables';
-
---
--- Dumping data for table `pma__recent`
---
-
-INSERT INTO `pma__recent` (`username`, `tables`) VALUES
-('root', '[{\"db\":\"bloome_studio\",\"table\":\"users\"},{\"db\":\"bloome_studio\",\"table\":\"roles\"},{\"db\":\"bloome_studio\",\"table\":\"promos\"},{\"db\":\"bloome_studio\",\"table\":\"pilates_pricing\"},{\"db\":\"bloome_studio\",\"table\":\"permissions\"},{\"db\":\"bloome_studio\",\"table\":\"class_schedules\"},{\"db\":\"bloome_studio\",\"table\":\"beauty_services\"},{\"db\":\"bloome_studio\",\"table\":\"beauty_categories\"},{\"db\":\"bloome_studio\",\"table\":\"members\"},{\"db\":\"bloome_studio\",\"table\":\"role_permissions\"}]');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__relation`
---
-
-CREATE TABLE `pma__relation` (
-  `master_db` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `master_table` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `master_field` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `foreign_db` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `foreign_table` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `foreign_field` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Relation table';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__savedsearches`
---
-
-CREATE TABLE `pma__savedsearches` (
-  `id` int(5) UNSIGNED NOT NULL,
-  `username` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `search_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `search_data` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Saved searches';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__table_coords`
---
-
-CREATE TABLE `pma__table_coords` (
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `table_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `pdf_page_number` int(11) NOT NULL DEFAULT '0',
-  `x` float UNSIGNED NOT NULL DEFAULT '0',
-  `y` float UNSIGNED NOT NULL DEFAULT '0'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Table coordinates for phpMyAdmin PDF output';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__table_info`
---
-
-CREATE TABLE `pma__table_info` (
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `table_name` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT '',
-  `display_field` varchar(64) COLLATE utf8_bin NOT NULL DEFAULT ''
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Table information for phpMyAdmin';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__table_uiprefs`
---
-
-CREATE TABLE `pma__table_uiprefs` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `table_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `prefs` text COLLATE utf8_bin NOT NULL,
-  `last_update` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Tables'' UI preferences';
-
---
--- Dumping data for table `pma__table_uiprefs`
---
-
-INSERT INTO `pma__table_uiprefs` (`username`, `db_name`, `table_name`, `prefs`, `last_update`) VALUES
-('root', 'bloome_studio', 'users', '{\"sorted_col\":\"`users`.`password_salt`  ASC\"}', '2026-10-11 05:27:14');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__tracking`
---
-
-CREATE TABLE `pma__tracking` (
-  `db_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `table_name` varchar(64) COLLATE utf8_bin NOT NULL,
-  `version` int(10) UNSIGNED NOT NULL,
-  `date_created` datetime NOT NULL,
-  `date_updated` datetime NOT NULL,
-  `schema_snapshot` text COLLATE utf8_bin NOT NULL,
-  `schema_sql` text COLLATE utf8_bin,
-  `data_sql` longtext COLLATE utf8_bin,
-  `tracking` set('UPDATE','REPLACE','INSERT','DELETE','TRUNCATE','CREATE DATABASE','ALTER DATABASE','DROP DATABASE','CREATE TABLE','ALTER TABLE','RENAME TABLE','DROP TABLE','CREATE INDEX','DROP INDEX','CREATE VIEW','ALTER VIEW','DROP VIEW') COLLATE utf8_bin DEFAULT NULL,
-  `tracking_active` int(1) UNSIGNED NOT NULL DEFAULT '1'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Database changes tracking for phpMyAdmin';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__userconfig`
---
-
-CREATE TABLE `pma__userconfig` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `timevalue` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  `config_data` text COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='User preferences storage for phpMyAdmin';
-
---
--- Dumping data for table `pma__userconfig`
---
-
-INSERT INTO `pma__userconfig` (`username`, `timevalue`, `config_data`) VALUES
-('root', '2026-10-11 16:22:48', '{\"Console\\/Mode\":\"collapse\"}');
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__usergroups`
---
-
-CREATE TABLE `pma__usergroups` (
-  `usergroup` varchar(64) COLLATE utf8_bin NOT NULL,
-  `tab` varchar(64) COLLATE utf8_bin NOT NULL,
-  `allowed` enum('Y','N') COLLATE utf8_bin NOT NULL DEFAULT 'N'
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='User groups with configured menu items';
-
--- --------------------------------------------------------
-
---
--- Table structure for table `pma__users`
---
-
-CREATE TABLE `pma__users` (
-  `username` varchar(64) COLLATE utf8_bin NOT NULL,
-  `usergroup` varchar(64) COLLATE utf8_bin NOT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_bin COMMENT='Users and their assignments to user groups';
-
---
--- Indexes for dumped tables
---
-
---
--- Indexes for table `pma__bookmark`
---
-ALTER TABLE `pma__bookmark`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `pma__central_columns`
---
-ALTER TABLE `pma__central_columns`
-  ADD PRIMARY KEY (`db_name`,`col_name`);
-
---
--- Indexes for table `pma__column_info`
---
-ALTER TABLE `pma__column_info`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `db_name` (`db_name`,`table_name`,`column_name`);
-
---
--- Indexes for table `pma__designer_settings`
---
-ALTER TABLE `pma__designer_settings`
-  ADD PRIMARY KEY (`username`);
-
---
--- Indexes for table `pma__export_templates`
---
-ALTER TABLE `pma__export_templates`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `u_user_type_template` (`username`,`export_type`,`template_name`);
-
---
--- Indexes for table `pma__favorite`
---
-ALTER TABLE `pma__favorite`
-  ADD PRIMARY KEY (`username`);
-
---
--- Indexes for table `pma__history`
---
-ALTER TABLE `pma__history`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `username` (`username`,`db`,`table`,`timevalue`);
-
---
--- Indexes for table `pma__navigationhiding`
---
-ALTER TABLE `pma__navigationhiding`
-  ADD PRIMARY KEY (`username`,`item_name`,`item_type`,`db_name`,`table_name`);
-
---
--- Indexes for table `pma__pdf_pages`
---
-ALTER TABLE `pma__pdf_pages`
-  ADD PRIMARY KEY (`page_nr`),
-  ADD KEY `db_name` (`db_name`);
-
---
--- Indexes for table `pma__recent`
---
-ALTER TABLE `pma__recent`
-  ADD PRIMARY KEY (`username`);
-
---
--- Indexes for table `pma__relation`
---
-ALTER TABLE `pma__relation`
-  ADD PRIMARY KEY (`master_db`,`master_table`,`master_field`),
-  ADD KEY `foreign_field` (`foreign_db`,`foreign_table`);
-
---
--- Indexes for table `pma__savedsearches`
---
-ALTER TABLE `pma__savedsearches`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `u_savedsearches_username_dbname` (`username`,`db_name`,`search_name`);
-
---
--- Indexes for table `pma__table_coords`
---
-ALTER TABLE `pma__table_coords`
-  ADD PRIMARY KEY (`db_name`,`table_name`,`pdf_page_number`);
-
---
--- Indexes for table `pma__table_info`
---
-ALTER TABLE `pma__table_info`
-  ADD PRIMARY KEY (`db_name`,`table_name`);
-
---
--- Indexes for table `pma__table_uiprefs`
---
-ALTER TABLE `pma__table_uiprefs`
-  ADD PRIMARY KEY (`username`,`db_name`,`table_name`);
-
---
--- Indexes for table `pma__tracking`
---
-ALTER TABLE `pma__tracking`
-  ADD PRIMARY KEY (`db_name`,`table_name`,`version`);
-
---
--- Indexes for table `pma__userconfig`
---
-ALTER TABLE `pma__userconfig`
-  ADD PRIMARY KEY (`username`);
-
---
--- Indexes for table `pma__usergroups`
---
-ALTER TABLE `pma__usergroups`
-  ADD PRIMARY KEY (`usergroup`,`tab`,`allowed`);
-
---
--- Indexes for table `pma__users`
---
-ALTER TABLE `pma__users`
-  ADD PRIMARY KEY (`username`,`usergroup`);
-
---
--- AUTO_INCREMENT for dumped tables
---
-
---
--- AUTO_INCREMENT for table `pma__bookmark`
---
-ALTER TABLE `pma__bookmark`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `pma__column_info`
---
-ALTER TABLE `pma__column_info`
-  MODIFY `id` int(5) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `pma__export_templates`
---
-ALTER TABLE `pma__export_templates`
-  MODIFY `id` int(5) UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
-
---
--- AUTO_INCREMENT for table `pma__history`
---
-ALTER TABLE `pma__history`
-  MODIFY `id` bigint(20) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `pma__pdf_pages`
---
-ALTER TABLE `pma__pdf_pages`
-  MODIFY `page_nr` int(10) UNSIGNED NOT NULL AUTO_INCREMENT;
-
---
--- AUTO_INCREMENT for table `pma__savedsearches`
---
-ALTER TABLE `pma__savedsearches`
-  MODIFY `id` int(5) UNSIGNED NOT NULL AUTO_INCREMENT;
---
--- Database: `test`
---
-CREATE DATABASE IF NOT EXISTS `test` DEFAULT CHARACTER SET latin1 COLLATE latin1_swedish_ci;
-USE `test`;
---
--- Database: `user`
---
-CREATE DATABASE IF NOT EXISTS `user` DEFAULT CHARACTER SET utf16le COLLATE utf16le_general_ci;
-USE `user`;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `bookings`
---
-
-CREATE TABLE `bookings` (
-  `id` int(11) NOT NULL,
-  `kode_booking` varchar(30) DEFAULT NULL,
-  `customer_id` int(11) DEFAULT NULL,
-  `kelas_id` int(11) DEFAULT NULL,
-  `tanggal_booking` date DEFAULT NULL,
-  `STATUS` enum('pending','lunas','batal') DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `customers`
---
-
-CREATE TABLE `customers` (
-  `id` int(11) NOT NULL,
-  `nama` varchar(100) DEFAULT NULL,
-  `wa` varchar(20) DEFAULT NULL,
-  `email` varchar(100) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `e_statement`
---
-
-CREATE TABLE `e_statement` (
-  `id` int(11) NOT NULL,
-  `tanggal` date DEFAULT NULL,
-  `deskripsi` text,
-  `masuk` bigint(20) DEFAULT NULL,
-  `keluar` bigint(20) DEFAULT NULL,
-  `booking_id` int(11) DEFAULT NULL,
-  `file_sumber` varchar(255) DEFAULT NULL,
-  `uploaded_by` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `kelas`
---
-
-CREATE TABLE `kelas` (
-  `id` int(11) NOT NULL,
-  `nama_kelas` varchar(100) DEFAULT NULL,
-  `harga` int(11) DEFAULT NULL,
-  `kuota` int(11) DEFAULT NULL,
-  `jam` time DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `laporan_keuangan`
---
-
-CREATE TABLE `laporan_keuangan` (
-  `id` int(11) NOT NULL,
-  `jenis` enum('neraca','laba_rugi','arus_kas') DEFAULT NULL,
-  `periode_bulan` date DEFAULT NULL,
-  `total_pemasukan_booking` int(11) DEFAULT NULL,
-  `file_excel` varchar(255) DEFAULT NULL,
-  `uploaded_by` int(11) DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `payments`
---
-
-CREATE TABLE `payments` (
-  `id` int(11) NOT NULL,
-  `booking_id` int(11) DEFAULT NULL,
-  `nominal` int(11) DEFAULT NULL,
-  `status_bayar` enum('belum','sudah') DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
--- --------------------------------------------------------
-
---
--- Table structure for table `users`
---
-
-CREATE TABLE `users` (
-  `id` int(11) NOT NULL,
-  `nama_lengkap` varchar(100) DEFAULT NULL,
-  `username` varchar(50) DEFAULT NULL,
-  `PASSWORD` varchar(255) DEFAULT NULL,
-  `role` enum('admin','owner1','owner2','accounting') DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf16le;
-
---
--- Dumping data for table `users`
---
-
-INSERT INTO `users` (`id`, `nama_lengkap`, `username`, `PASSWORD`, `role`) VALUES
-(1, 'Admin Bloomè', 'admin', '$2y$10$92IX...', 'admin'),
-(2, 'Owner 1', 'owner1', '$2y$10$92IX...', 'owner1'),
-(3, 'Owner 2', 'owner2', '$2y$10$92IX...', 'owner2'),
-(4, 'Accounting', 'accounting', '$2y$10$92IX...', 'accounting');
-
---
--- Indexes for dumped tables
---
-
---
--- Indexes for table `bookings`
---
-ALTER TABLE `bookings`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `kode_booking` (`kode_booking`);
-
---
--- Indexes for table `customers`
---
-ALTER TABLE `customers`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `e_statement`
---
-ALTER TABLE `e_statement`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `kelas`
---
-ALTER TABLE `kelas`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `laporan_keuangan`
---
-ALTER TABLE `laporan_keuangan`
-  ADD PRIMARY KEY (`id`);
-
---
--- Indexes for table `payments`
---
-ALTER TABLE `payments`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `booking_id` (`booking_id`);
-
---
--- Indexes for table `users`
---
-ALTER TABLE `users`
-  ADD PRIMARY KEY (`id`),
-  ADD UNIQUE KEY `username` (`username`);
-
---
--- AUTO_INCREMENT for dumped tables
---
-
---
--- AUTO_INCREMENT for table `users`
---
-ALTER TABLE `users`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
---
--- Database: `users`
---
-CREATE DATABASE IF NOT EXISTS `users` DEFAULT CHARACTER SET utf16le COLLATE utf16le_general_ci;
-USE `users`;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

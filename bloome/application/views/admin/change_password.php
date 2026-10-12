@@ -10,7 +10,7 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Playfair+Display:ital,wght@0,400;0,500;1,400&amp;display=swap" rel="stylesheet">
-	<link rel="stylesheet" href="<?php echo base_url('assets/css/admin.css'); ?>">
+	<link rel="stylesheet" href="<?php echo base_url('assets/css/admin.css?v=' . filemtime(FCPATH . 'assets/css/admin.css')); ?>">
 </head>
 <body class="admin-auth-page">
 	<main class="auth-layout">

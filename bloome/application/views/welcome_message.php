@@ -18,6 +18,11 @@ $service_booking_url = function ($service) use ($booking_url) {
 
 	return $booking_url;
 };
+$promo_booking_url = function ($promo) use ($service_booking_url) {
+	return $promo->code === 'PILATES-1010'
+		? site_url('booking/pilates-deal')
+		: $service_booking_url($promo->discipline);
+};
 $promo_image_url = function ($promo) {
 	$image_path = !empty($promo->image_path) ? $promo->image_path : NULL;
 	if ($image_path === NULL) {
@@ -101,7 +106,7 @@ $promo_image_url = function ($promo) {
 						<h3><?php echo html_escape($promo->title); ?></h3>
 						<?php if (!empty($promo->tagline)): ?><p class="promo-tagline"><?php echo html_escape($promo->tagline); ?></p><?php endif; ?>
 						<?php if (!empty($promo->terms_note)): ?><p class="promo-description"><?php echo html_escape($promo->terms_note); ?></p><?php endif; ?>
-						<div class="promo-bottom"><p class="promo-price"><?php echo $money($promo->price); ?> <small>/ <?php echo html_escape($promo->price_unit); ?></small></p><a class="button button-dark button-small" href="<?php echo $service_booking_url($promo->discipline); ?>">Gunakan Promo <span>→</span></a></div>
+						<div class="promo-bottom"><p class="promo-price"><?php echo $money($promo->price); ?> <small>/ <?php echo html_escape($promo->price_unit); ?></small></p><a class="button button-dark button-small" href="<?php echo html_escape($promo_booking_url($promo)); ?>">Gunakan Promo <span>→</span></a></div>
 					</div>
 				</article>
 				<?php endforeach; ?>
@@ -163,10 +168,11 @@ $promo_image_url = function ($promo) {
 		<section class="gallery-section section-wrap section-space" id="gallery">
 			<div class="section-heading heading-row"><div><p class="eyebrow">BLOOMÈ MOMENTS</p><h2>Lihat <em>suasananya.</em></h2></div><span class="gallery-note">a little glimpse of our space</span></div>
 			<div class="gallery-grid">
-				<img src="<?php echo base_url('img/gallery-studio-01.jpg'); ?>" alt="Sesi Pilates reformer di Bloomè Studio" loading="lazy">
-				<img src="<?php echo base_url('img/gallery-studio-02.jpg'); ?>" alt="Ruang kelas yoga Bloomè Studio" loading="lazy">
-				<img src="<?php echo base_url('img/gallery-studio-03.jpg'); ?>" alt="Area lounge Bloomè Studio" loading="lazy">
-				<img src="<?php echo base_url('img/gallery-studio-04.jpg'); ?>" alt="Area perawatan beauty Bloomè Studio" loading="lazy">
+				<?php foreach ($gallery as $image): ?>
+				<?php if (preg_match('#^(?:gallery-uploads/)?[A-Za-z0-9][A-Za-z0-9._-]*\.(?:jpe?g|png)$#i', $image->image_path)): ?>
+				<img src="<?php echo html_escape(base_url('img/' . $image->image_path)); ?>" alt="<?php echo html_escape($image->alt_text); ?>" loading="lazy">
+				<?php endif; ?>
+				<?php endforeach; ?>
 			</div>
 		</section>
 
@@ -177,7 +183,7 @@ $promo_image_url = function ($promo) {
 
 	<footer class="site-footer">
 		<div class="footer-brand"><a class="wordmark" href="#home">Bloomè <span>Studio</span></a><p>Pilates · Yoga · Beauty</p></div>
-		<div class="footer-column footer-location"><h3>Studio</h3><a class="location-link" href="https://maps.app.goo.gl/Ukuq2Xiimw5tQijk7" target="_blank" rel="noopener" aria-label="Buka lokasi Bloomè Studio di Google Maps"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="maps-pin" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#4285F4"/><stop offset=".35" stop-color="#34A853"/><stop offset=".68" stop-color="#FBBC04"/><stop offset="1" stop-color="#EA4335"/></linearGradient></defs><path d="M19 10.2c0 5-7 11-7 11s-7-6-7-11a7 7 0 1 1 14 0Z" fill="none" stroke="url(#maps-pin)" stroke-width="2"/><circle cx="12" cy="10" r="2.3" fill="#EA4335"/></svg><span>Ruko Cinere Terrace, Blok JA, No. 11<br>Cinere, Depok</span></a></div>
+		<div class="footer-column footer-location"><h3>Studio</h3><a class="location-link" href="https://maps.app.goo.gl/4deKoLdCMLxpExhd8" target="_blank" rel="noopener" aria-label="Buka lokasi Bloomè Studio di Google Maps"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="maps-pin" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stop-color="#4285F4"/><stop offset=".35" stop-color="#34A853"/><stop offset=".68" stop-color="#FBBC04"/><stop offset="1" stop-color="#EA4335"/></linearGradient></defs><path d="M19 10.2c0 5-7 11-7 11s-7-6-7-11a7 7 0 1 1 14 0Z" fill="none" stroke="url(#maps-pin)" stroke-width="2"/><circle cx="12" cy="10" r="2.3" fill="#EA4335"/></svg><span>Ruko Cinere Terrace, Blok JA, No. 11<br>Cinere, Depok</span></a><a class="studio-location-image" href="https://maps.app.goo.gl/4deKoLdCMLxpExhd8" target="_blank" rel="noopener" aria-label="Lihat foto dan titik Bloomè Studio di Google Maps"><img src="<?php echo base_url('img/google-maps-studio-location.jpg'); ?>" alt="Tampak depan Bloomè Studio di Jl. Telaga Warna" loading="lazy"></a></div>
 		<div class="footer-column"><h3>Contact</h3><a href="tel:+628218000958">0821-8000-958</a><a href="mailto:Bloomecinere.sejahteraabadi@gmail.com">Bloomecinere.sejahteraabadi@gmail.com</a><div class="footer-socials">
 			<a class="footer-social-link instagram-link" href="https://www.instagram.com/bloomestudio.jkt" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="instagram-mark" x1="3" y1="21" x2="21" y2="3" gradientUnits="userSpaceOnUse"><stop stop-color="#FEDA75"/><stop offset=".35" stop-color="#FA7E1E"/><stop offset=".65" stop-color="#D62976"/><stop offset="1" stop-color="#4F5BD5"/></linearGradient></defs><rect x="3.2" y="3.2" width="17.6" height="17.6" rx="5.2" fill="none" stroke="url(#instagram-mark)" stroke-width="1.9"/><circle cx="12" cy="12" r="4.1" fill="none" stroke="url(#instagram-mark)" stroke-width="1.9"/><circle cx="17.8" cy="6.6" r="1.2" fill="#D62976"/></svg><span>@bloomestudio.jkt</span></a>
 			<a class="footer-social-link threads-link" href="https://www.threads.net/@bloomestudio.jkt" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.9 10.8c-.5-4-2.7-6.3-6.2-6.3-4.1 0-6.6 3-6.6 7.6 0 4.7 2.4 7.6 6.6 7.6 3.2 0 5.3-1.8 5.3-4.6 0-2.4-1.7-3.9-4.3-3.9-2.2 0-3.6 1-3.6 2.6 0 1.3 1 2.2 2.5 2.2 1.7 0 2.8-1.1 2.8-3.1 0-2.7-1.4-4.3-3.7-4.3-1.2 0-2.2.4-3.1 1.2" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg><span>@bloomestudio.jkt</span></a>

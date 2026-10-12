@@ -95,9 +95,10 @@
 
 		if (!selectedSessions.length) {
 			dateInput.min = window.bloomeBooking.today;
-			dateInput.max = window.bloomeBooking.latestDate;
-			document.getElementById('schedule-validity-note').textContent =
-				'Pilih sesi pertama hingga dua tahun ke depan. Masa berlaku paket dihitung sejak tanggal tersebut.';
+			dateInput.max = window.bloomeBooking.promoLastSessionDate || window.bloomeBooking.latestDate;
+			document.getElementById('schedule-validity-note').textContent = window.bloomeBooking.promoLastSessionDate
+				? 'Seluruh sesi promo harus dijadwalkan paling lambat 30 Oktober 2026.'
+				: 'Pilih sesi pertama hingga dua tahun ke depan. Masa berlaku paket dihitung sejak tanggal tersebut.';
 		} else {
 			var startDate = getStartDate();
 			var validityDays = selectedPackage.validity > 0 ? selectedPackage.validity : 365;
@@ -105,9 +106,13 @@
 			lastDate.setUTCDate(lastDate.getUTCDate() + validityDays);
 			dateInput.min = startDate;
 			dateInput.max = lastDate.toISOString().slice(0, 10);
-			document.getElementById('schedule-validity-note').textContent =
-				'Semua sesi harus dijadwalkan dari tanggal sesi pertama hingga ' + dateInput.max
-				+ ' (masa berlaku ' + validityDays + ' hari).';
+			if (window.bloomeBooking.promoLastSessionDate && dateInput.max > window.bloomeBooking.promoLastSessionDate) {
+				dateInput.max = window.bloomeBooking.promoLastSessionDate;
+			}
+			document.getElementById('schedule-validity-note').textContent = window.bloomeBooking.promoLastSessionDate
+				? 'Seluruh sesi promo harus dijadwalkan paling lambat 30 Oktober 2026.'
+				: 'Semua sesi harus dijadwalkan dari tanggal sesi pertama hingga ' + dateInput.max
+					+ ' (masa berlaku ' + validityDays + ' hari).';
 		}
 
 		if (dateInput.value && (dateInput.value < dateInput.min || dateInput.value > dateInput.max)) {
@@ -246,6 +251,9 @@
 		slotsElement.innerHTML = '<p class="booking-empty-slots">Memuat ketersediaan jadwal…</p>';
 		var requestUrl = window.bloomeBooking.availabilityUrl + '?date=' + encodeURIComponent(dateInput.value)
 			+ '&package_id=' + encodeURIComponent(selectedPackage.id);
+		if (window.bloomeBooking.promoCode) {
+			requestUrl += '&promo_code=' + encodeURIComponent(window.bloomeBooking.promoCode);
+		}
 		if (selectedSessions.length) {
 			requestUrl += '&start_date=' + encodeURIComponent(getStartDate());
 		}

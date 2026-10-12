@@ -3,6 +3,11 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 
 class Booking extends CI_Controller
 {
+	const PILATES_DEAL_CODE = 'PILATES-1010';
+	const PILATES_DEAL_START = '2026-10-10 00:00:00';
+	const PILATES_DEAL_END = '2026-10-31 23:59:59';
+	const PILATES_DEAL_LAST_SESSION = '2026-10-30';
+
 	private $upload_directory;
 
 	public function __construct()
@@ -28,6 +33,31 @@ class Booking extends CI_Controller
 
 		$this->booking_model->expire_pending_bookings();
 		$this->load->view('booking_landing', $this->booking_page_data());
+	}
+
+	public function pilates_deal()
+	{
+		$this->booking_model->expire_pending_bookings();
+		$admin_access = $this->has_promo_admin_access();
+		if (!$this->is_pilates_deal_period_open() && !$admin_access) {
+			show_404();
+			return;
+		}
+
+		$promo = $this->booking_model->get_active_pilates_promo(self::PILATES_DEAL_CODE, $admin_access);
+		if (!$promo) {
+			show_404();
+			return;
+		}
+
+		$package = $this->booking_model->get_pilates_promo_package(self::PILATES_DEAL_CODE, $admin_access);
+		if (!$package) {
+			log_message('error', 'Active Pilates promo has no valid group package: ' . self::PILATES_DEAL_CODE);
+			show_error('Paket promo Pilates sedang tidak tersedia.', 500);
+			return;
+		}
+
+		$this->load->view('booking_landing', $this->booking_page_data(array(), self::PILATES_DEAL_CODE));
 	}
 
 	public function statement()
@@ -57,7 +87,15 @@ class Booking extends CI_Controller
 		$this->booking_model->expire_pending_bookings();
 		$date = $this->input->get('date', TRUE);
 		$start_date = $this->input->get('start_date', TRUE);
-		$package = $this->booking_model->get_package((int) $this->input->get('package_id', TRUE));
+		$promo_code = $this->input->get('promo_code', TRUE);
+		$promo_code = is_string($promo_code) && $promo_code !== '' ? $promo_code : NULL;
+		if ($promo_code !== NULL && !$this->has_promo_access()) {
+			return $this->json_response(array('error' => 'Periode promo Pilates sudah berakhir.'), 403);
+		}
+		$package_id = (int) $this->input->get('package_id', TRUE);
+		$package = $promo_code === NULL
+			? $this->booking_model->get_package($package_id)
+			: $this->get_promo_booking_package($package_id, $promo_code, $this->has_promo_admin_access());
 
 		if (!$this->valid_date($date) || !$package || !$this->date_in_package_range($date, $package, $start_date)) {
 			return $this->json_response(array('error' => 'Tanggal atau paket booking tidak valid.'), 400);
@@ -102,7 +140,16 @@ class Booking extends CI_Controller
 		}
 
 		$this->booking_model->expire_pending_bookings();
-		$package = $this->booking_model->get_package((int) $this->input->post('package_id', TRUE));
+		$promo_code = $this->input->post('promo_code', TRUE);
+		$promo_code = is_string($promo_code) && $promo_code !== '' ? $promo_code : NULL;
+		if ($promo_code !== NULL && !$this->has_promo_access()) {
+			show_404();
+			return;
+		}
+		$package_id = (int) $this->input->post('package_id', TRUE);
+		$package = $promo_code === NULL
+			? $this->booking_model->get_package($package_id)
+			: $this->get_promo_booking_package($package_id, $promo_code, $this->has_promo_admin_access());
 		$errors = array();
 		$full_name = trim((string) $this->input->post('full_name', TRUE));
 		$phone = preg_replace('/[^0-9+]/', '', (string) $this->input->post('phone', TRUE));
@@ -190,7 +237,7 @@ class Booking extends CI_Controller
 				@unlink($this->upload_directory . basename($statement_path));
 			}
 			$this->output->set_status_header(422);
-			$this->load->view('booking_landing', $this->booking_page_data($errors));
+			$this->load->view('booking_landing', $this->booking_page_data($errors, $promo_code));
 			return;
 		}
 
@@ -211,10 +258,17 @@ class Booking extends CI_Controller
 		$now = new DateTime('now', new DateTimeZone('Asia/Jakarta'));
 		$expires = clone $now;
 		$expires->modify('+24 hours');
+		if ($promo_code !== NULL && !$this->has_promo_admin_access()) {
+			$promo_deadline = new DateTime(self::PILATES_DEAL_END, new DateTimeZone('Asia/Jakarta'));
+			if ($expires > $promo_deadline) {
+				$expires = $promo_deadline;
+			}
+		}
 		$booking = array(
 			'public_token' => $token,
 			'service' => 'pilates',
 			'package_id' => (int) $package->id,
+			'promo_code' => $promo_code,
 			'package_name' => $package->name,
 			'package_kind' => $package->kind . ' · ' . $package->class_type,
 			'session_count' => (int) $package->session_count,
@@ -243,7 +297,7 @@ class Booking extends CI_Controller
 			}
 			$errors[] = 'Jadwal yang dipilih baru saja terisi atau tidak lagi tersedia. Silakan pilih jadwal lain.';
 			$this->output->set_status_header(409);
-			$this->load->view('booking_landing', $this->booking_page_data($errors));
+			$this->load->view('booking_landing', $this->booking_page_data($errors, $promo_code));
 			return;
 		}
 
@@ -256,6 +310,10 @@ class Booking extends CI_Controller
 		$booking = $this->booking_model->get_booking($token);
 		if (!$booking) {
 			show_404();
+		}
+		if (!empty($booking->promo_code) && !$this->has_promo_access()) {
+			show_404();
+			return;
 		}
 		if ($booking->booking_status === 'confirmed') {
 			redirect('booking/success/' . $token);
@@ -323,7 +381,7 @@ class Booking extends CI_Controller
 		));
 	}
 
-	private function booking_page_data($errors = array())
+	private function booking_page_data($errors = array(), $promo_code = NULL)
 	{
 		$this->load->model('Booking_model', 'booking_model');
 		$health_notes = $this->input->post('health_notes', TRUE);
@@ -331,20 +389,62 @@ class Booking extends CI_Controller
 		$today = new DateTime('today', new DateTimeZone('Asia/Jakarta'));
 		$latest = clone $today;
 		$latest->modify('+2 years');
+		$promo_package = NULL;
+		if ($promo_code === self::PILATES_DEAL_CODE) {
+			$promo_package = $this->booking_model->get_pilates_promo_package($promo_code, $this->has_promo_admin_access());
+			if (!$promo_package) {
+				log_message('error', 'Could not load Pilates promo package for booking page: ' . $promo_code);
+				show_error('Paket promo Pilates sedang tidak tersedia.', 500);
+				return array();
+			}
+		}
 		return array(
 			'service_name' => 'Pilates',
 			'selected_service' => 'pilates',
-			'packages' => $this->booking_model->get_pilates_packages(),
+			'packages' => $promo_package ? array($promo_package) : $this->booking_model->get_pilates_packages(),
+			'promo_offer' => $promo_package ? $promo_package->promo_offer : NULL,
+			'promo_code' => $promo_package ? $promo_code : NULL,
 			'errors' => $errors,
 			'health_notes' => $health_notes,
 			'today' => $today->format('Y-m-d'),
 			'latest_date' => $latest->format('Y-m-d'),
+			'promo_last_session_date' => $promo_package ? self::PILATES_DEAL_LAST_SESSION : NULL,
 			'csrf_name' => $this->security->get_csrf_token_name(),
 			'csrf_hash' => $this->security->get_csrf_hash(),
 			'availability_url' => site_url('booking/availability'),
 			'statement_url' => site_url('booking/statement'),
 			'create_url' => site_url('booking/create')
 		);
+	}
+
+	private function get_promo_booking_package($package_id, $promo_code, $include_outside_validity = FALSE)
+	{
+		if ($promo_code !== self::PILATES_DEAL_CODE) {
+			return NULL;
+		}
+
+		$package = $this->booking_model->get_pilates_promo_package($promo_code, $include_outside_validity);
+		return $package && (int) $package->id === (int) $package_id ? $package : NULL;
+	}
+
+	private function has_promo_admin_access()
+	{
+		return (bool) $this->session->userdata('admin_user_id')
+			&& $this->session->userdata('admin_role_name') === 'admin'
+			&& !$this->session->userdata('admin_must_change_password');
+	}
+
+	private function has_promo_access()
+	{
+		return $this->is_pilates_deal_period_open() || $this->has_promo_admin_access();
+	}
+
+	private function is_pilates_deal_period_open()
+	{
+		$now = new DateTime('now', new DateTimeZone('Asia/Jakarta'));
+		$start = new DateTime(self::PILATES_DEAL_START, new DateTimeZone('Asia/Jakarta'));
+		$end = new DateTime(self::PILATES_DEAL_END, new DateTimeZone('Asia/Jakarta'));
+		return $now >= $start && $now <= $end;
 	}
 
 	private function valid_date($date)
@@ -364,7 +464,9 @@ class Booking extends CI_Controller
 		if ($start_date === NULL || $start_date === '') {
 			$latest_start = clone $today;
 			$latest_start->modify('+2 years');
-			return $chosen >= $today && $chosen <= $latest_start;
+			$is_in_promo_window = !isset($package->promo_offer)
+				|| $chosen <= new DateTime(self::PILATES_DEAL_LAST_SESSION, new DateTimeZone('Asia/Jakarta'));
+			return $chosen >= $today && $chosen <= $latest_start && $is_in_promo_window;
 		}
 
 		if (!$this->valid_date($start_date)) {
@@ -382,6 +484,12 @@ class Booking extends CI_Controller
 			: 365;
 		$latest = clone $start;
 		$latest->modify('+' . $validity_days . ' days');
+		if (isset($package->promo_offer)) {
+			$promo_latest = new DateTime(self::PILATES_DEAL_LAST_SESSION, new DateTimeZone('Asia/Jakarta'));
+			if ($latest > $promo_latest) {
+				$latest = $promo_latest;
+			}
+		}
 		return $chosen <= $latest;
 	}
 

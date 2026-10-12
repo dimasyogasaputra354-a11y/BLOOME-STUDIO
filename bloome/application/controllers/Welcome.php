@@ -26,7 +26,9 @@ class Welcome extends CI_Controller {
 			'promos' => $this->studio->get_active_promos(),
 			'pilates' => $this->studio->get_pilates_prices(),
 			'yoga' => $this->studio->get_yoga_prices(),
-			'beauty' => $this->studio->get_beauty_preview()
+			'beauty' => $this->studio->get_beauty_preview(),
+			'reviews' => $this->studio->get_active_reviews(),
+			'gallery' => $this->studio->get_active_gallery()
 		);
 
 		$this->load->view('welcome_message', $data);

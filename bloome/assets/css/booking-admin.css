@@ -19,10 +19,45 @@
 .booking-admin-actions form { margin: 0; }
 .booking-admin-actions .admin-button:disabled { opacity: .5; cursor: not-allowed; }
 .booking-admin-reject { color: #8b3f45; border-color: #d4a4a6; background: #fff; }
+.manual-booking-panel { margin-bottom: 22px; scroll-margin-top: 70px; }
+.manual-booking-summary { color: #30292c; font-size: 13px; font-weight: 600; cursor: pointer; }
+.manual-booking-panel form { margin-top: 17px; }
+.manual-booking-panel .promo-edit-fields { min-width: 0; }
+.manual-booking-sessions { display: grid; gap: 9px; margin: 12px 0; }
+.booking-admin-filters { display: grid; grid-template-columns: minmax(0, 1fr) 250px; gap: 11px; margin: 0 0 16px; }
+.booking-search { min-height: 44px; display: flex; align-items: center; gap: 9px; padding: 0 13px; color: #817c7c; background: #fff; border: 1px solid #e6e1dc; border-radius: 11px; }
+.booking-search span { font-size: 19px; }
+.booking-search input, .booking-admin-filters select { width: 100%; min-width: 0; height: 44px; padding: 0 12px; color: #30292c; background: #fff; border: 1px solid #e6e1dc; border-radius: 11px; outline: none; font: 400 12px var(--sans); }
+.booking-search input { height: auto; padding: 0; border: 0; }
+.booking-admin-card[hidden] { display: none; }
+.reschedule-session-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 10px 0; }
+.reschedule-session-row label { display: grid; gap: 5px; color: #817c7c; font-size: 10px; }
+.reschedule-session-row input, .reschedule-session-row select { width: 100%; padding: 9px 10px; color: #30292c; background: #fff; border: 1px solid #e6e1dc; border-radius: 6px; font: 400 11px var(--sans); }
+.booking-admin-management { display: grid; gap: 12px; margin-top: 19px; padding-top: 14px; border-top: 1px solid #f0ede9; }
+.booking-admin-management .promo-editor { min-width: 0; }
+.booking-admin-management .promo-edit-fields { min-width: 0; }
+.booking-admin-management .promo-editor > form { margin-top: 12px; }
+.booking-admin-management .booking-admin-actions { margin-top: 5px; }
+.booking-admin-management .promo-delete-form { margin-top: 0; }
+.section-heading #reschedule { margin: 0 0 15px; font: 400 22px var(--serif); scroll-margin-top: 75px; }
 @media (max-width: 680px) {
 	.booking-admin-card { padding: 18px; }
 	.booking-admin-details { grid-template-columns: 1fr; }
 	.booking-admin-card-header { flex-direction: column; }
 	.booking-admin-actions { flex-direction: column; }
 	.booking-admin-actions .admin-button { width: 100%; }
+	.reschedule-session-row { grid-template-columns: 1fr; }
+	.booking-admin-filters { grid-template-columns: 1fr; }
 }
+
+.booking-admin-card-header a,
+.booking-admin-files,
+.booking-admin-sessions { font-size: 13px; }
+.booking-admin-details > div > span { font-size: 11px; }
+.booking-admin-details > div > strong { font-size: 13px; }
+.manual-booking-summary { font-size: 14px; }
+.reschedule-session-row label { font-size: 11px; }
+.reschedule-session-row input,
+.reschedule-session-row select,
+.booking-search input,
+.booking-admin-filters select { font-size: 12px; }

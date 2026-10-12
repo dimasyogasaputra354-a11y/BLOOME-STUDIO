@@ -20,7 +20,7 @@ class Studio_model extends CI_Model
 			->group_end()
 			->order_by('valid_until IS NULL', 'ASC', FALSE)
 			->order_by('valid_until', 'ASC')
-			->limit(2)
+			->limit(4)
 			->get('promos')
 			->result();
 	}
@@ -51,14 +51,35 @@ class Studio_model extends CI_Model
 	public function get_beauty_preview()
 	{
 		return $this->db
-			->select('s.name, s.price_type, s.price, s.price_max, s.percent_value, c.name AS category_name')
+			->select('s.name, s.description, s.price_type, s.price, s.price_max, s.percent_value, s.notes, c.name AS category_name')
 			->from('beauty_services s')
 			->join('beauty_categories c', 'c.id = s.category_id')
 			->where('s.is_active', 1)
-			->where_in('c.code', array('NAIL_HAND', 'NAIL_FOOT', 'LASHLIFT'))
-			->where_in('s.name', array('Manicure', 'SPA Pedicure', 'Lashlift & Tint'))
+			->where('s.is_featured', 1)
 			->order_by('c.sort_order', 'ASC')
+			->order_by('s.sort_order', 'ASC')
 			->get()
+			->result();
+	}
+
+	public function get_active_reviews()
+	{
+		return $this->db
+			->where('is_active', 1)
+			->order_by('sort_order', 'ASC')
+			->order_by('id', 'ASC')
+			->get('studio_reviews')
+			->result();
+	}
+
+	public function get_active_gallery()
+	{
+		return $this->db
+			->where('is_active', 1)
+			->order_by('sort_order', 'ASC')
+			->order_by('id', 'ASC')
+			->limit(4)
+			->get('studio_gallery')
 			->result();
 	}
 }

@@ -29,20 +29,21 @@ $package_detail = function ($package) {
 $sessions_in_package = function ($package) {
 	return (int) $package->session_count + (int) $package->bonus_sessions;
 };
+$is_promo_booking = !empty($promo_offer);
 ?><!DOCTYPE html>
 <html lang="id">
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="theme-color" content="#f8f5f1">
-	<meta name="description" content="Booking kelas Pilates di Bloomè Studio, Cinere, Depok.">
-	<title>Booking Pilates — Bloomè Studio</title>
+	<meta name="description" content="<?php echo $is_promo_booking ? 'Booking 10.10 Pilates Deal: dua sesi Pilates seharga ' . html_escape($money($promo_offer->price)) . ' di Bloomè Studio.' : 'Booking kelas Pilates di Bloomè Studio, Cinere, Depok.'; ?>">
+	<title><?php echo $is_promo_booking ? '10.10 Pilates Deal' : 'Booking Pilates'; ?> — Bloomè Studio</title>
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 	<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;1,400;1,500&display=swap" rel="stylesheet">
 	<link rel="stylesheet" href="<?php echo base_url('assets/css/bloome.css?v=' . filemtime(FCPATH . 'assets/css/bloome.css')); ?>">
 </head>
-<body class="booking-page">
+<body class="booking-page<?php echo $is_promo_booking ? ' booking-promo-page' : ''; ?>">
 	<main class="booking-flow">
 		<a class="booking-back-link" href="<?php echo site_url(); ?>#services">← Kembali ke pilihan layanan</a>
 		<div class="booking-progress" aria-label="Langkah booking"><span class="is-active"></span><span></span><span></span><span></span></div>
@@ -52,7 +53,14 @@ $sessions_in_package = function ($package) {
 
 		<form id="booking-form" action="<?php echo html_escape($create_url); ?>" method="post" enctype="multipart/form-data" novalidate>
 			<input type="hidden" name="<?php echo html_escape($csrf_name); ?>" value="<?php echo html_escape($csrf_hash); ?>">
+			<?php if ($is_promo_booking): ?><input type="hidden" name="promo_code" value="<?php echo html_escape($promo_code); ?>"><?php endif; ?>
 			<section class="booking-step is-active" data-booking-step="1">
+				<?php if ($is_promo_booking): ?>
+				<div class="booking-promo-intro">
+					<img src="<?php echo base_url('img/10.10-pilates.jpeg'); ?>" alt="10.10 Pilates Deal: Rp190.000 untuk dua sesi" fetchpriority="high">
+					<div><p class="eyebrow">SPECIAL PILATES · 10.10</p><h1>Booking Pilates Deal</h1><p>Promo <?php echo html_escape($promo_offer->title); ?> · <strong><?php echo $money($promo_offer->price); ?> untuk <?php echo (int) $promo_offer->session_count; ?> sesi</strong></p></div>
+				</div>
+				<?php else: ?>
 				<p class="eyebrow">BOOKING PILATES</p>
 				<div class="booking-title-with-icon">
 					<svg class="pilates-barbell" viewBox="0 0 120 64" role="img" aria-label="Ilustrasi barbel Pilates">
@@ -63,6 +71,7 @@ $sessions_in_package = function ($package) {
 					</svg>
 					<h1>Informasi Data Diri</h1>
 				</div>
+				<?php endif; ?>
 
 				<label class="booking-field">
 					<span>Nama Lengkap <b>*</b></span>
@@ -101,11 +110,17 @@ $sessions_in_package = function ($package) {
 			</section>
 
 			<section class="booking-step" data-booking-step="2" hidden>
-				<p class="eyebrow">BOOKING PILATES · 02</p>
-				<h1>Pilih Paket</h1>
-				<p class="booking-intro">Pilih jenis sesi atau membership. Seluruh sesi dalam paket dipilih tanggalnya pada langkah berikutnya.</p>
+				<p class="eyebrow"><?php echo $is_promo_booking ? 'SPECIAL PILATES · 10.10' : 'BOOKING PILATES · 02'; ?></p>
+				<h1><?php echo $is_promo_booking ? 'Pilih Promo' : 'Pilih Paket'; ?></h1>
+				<p class="booking-intro"><?php echo $is_promo_booking ? 'Pilih 10.10 Pilates Deal. Jadwalkan kedua sesi pada langkah berikutnya.' : 'Pilih jenis sesi atau membership. Seluruh sesi dalam paket dipilih tanggalnya pada langkah berikutnya.'; ?></p>
+				<?php if ($is_promo_booking): ?>
+				<div class="booking-promo-price-card">
+					<img src="<?php echo base_url('img/10.10-pilates.jpeg'); ?>" alt="" loading="lazy">
+					<div><p class="eyebrow">PROMO PILATES</p><h2><?php echo html_escape($promo_offer->title); ?></h2><strong><?php echo $money($promo_offer->price); ?> <small>untuk <?php echo (int) $promo_offer->session_count; ?> sesi</small></strong><?php if (!empty($promo_offer->terms_note)): ?><p><?php echo html_escape($promo_offer->terms_note); ?></p><?php endif; ?></div>
+				</div>
+				<?php endif; ?>
 				<div class="booking-package-section">
-					<h2>Pilates Class Price <small>Harga per sesi</small></h2>
+					<h2><?php echo $is_promo_booking ? 'Paket yang tersedia' : 'Pilates Class Price <small>Harga per sesi</small>'; ?></h2>
 					<div class="booking-packages">
 						<?php foreach ($session_packages as $index => $package): ?>
 						<label class="booking-package">
@@ -116,6 +131,7 @@ $sessions_in_package = function ($package) {
 						<?php endforeach; ?>
 					</div>
 				</div>
+				<?php if (!$is_promo_booking && $membership_packages): ?>
 				<div class="booking-package-section">
 					<h2>Pilates Membership Price</h2>
 					<?php foreach (array('group' => 'Membership Group', 'private' => 'Membership Private', 'duo' => 'Membership Duo (Valid 2 Person)', 'triple' => 'Membership Triple (Valid 3 Person)') as $class_type => $heading): ?>
@@ -141,6 +157,7 @@ $sessions_in_package = function ($package) {
 					<?php endif; ?>
 					<?php endforeach; ?>
 				</div>
+				<?php endif; ?>
 				<button class="booking-back-step" type="button" data-previous-step="1">← Kembali ke data diri</button>
 				<button class="button button-booking-next" type="button" data-next-step="3" disabled>Pilih Jadwal <span aria-hidden="true">›</span></button>
 			</section>
@@ -184,12 +201,13 @@ $sessions_in_package = function ($package) {
 			</section>
 		</form>
 	</main>
-	<?php $this->load->view('partials/reviews'); ?>
 	<script>
 		window.bloomeBooking = {
 			availabilityUrl: <?php echo json_encode($availability_url); ?>,
+			promoCode: <?php echo json_encode($promo_code); ?>,
 			today: <?php echo json_encode($today); ?>,
-			latestDate: <?php echo json_encode($latest_date); ?>
+			latestDate: <?php echo json_encode($latest_date); ?>,
+			promoLastSessionDate: <?php echo json_encode($promo_last_session_date); ?>
 		};
 	</script>
 	<script src="<?php echo base_url('assets/js/booking.js?v=' . filemtime(FCPATH . 'assets/js/booking.js')); ?>"></script>

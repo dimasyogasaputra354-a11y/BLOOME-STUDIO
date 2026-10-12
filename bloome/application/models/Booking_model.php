@@ -30,6 +30,52 @@ class Booking_model extends CI_Model
 			->row();
 	}
 
+	public function get_active_pilates_promo($code, $include_outside_validity = FALSE)
+	{
+		$this->db
+			->where('code', $code)
+			->where('discipline', 'pilates')
+			->where('is_active', 1);
+		if (!$include_outside_validity) {
+			$today = date('Y-m-d');
+			$this->db
+				->where('valid_from <=', $today)
+				->where('valid_until >=', $today);
+		}
+
+		return $this->db->get('promos')->row();
+	}
+
+	public function get_pilates_promo_package($code, $include_outside_validity = FALSE)
+	{
+		$promo = $this->get_active_pilates_promo($code, $include_outside_validity);
+		if (!$promo || (int) $promo->price <= 0 || (int) $promo->session_count <= 0) {
+			return NULL;
+		}
+
+		$package = $this->db
+			->where('kind', 'session')
+			->where('class_type', 'group')
+			->where('participants', 1)
+			->where('is_active', 1)
+			->order_by('sort_order', 'ASC')
+			->get('pilates_pricing')
+			->row();
+		if (!$package) {
+			return NULL;
+		}
+
+		$package->name = $promo->title;
+		$package->session_count = (int) $promo->session_count;
+		$package->bonus_sessions = 0;
+		$package->price = (int) $promo->price;
+		$package->validity_days = NULL;
+		$package->validity_label = NULL;
+		$package->notes = $promo->terms_note;
+		$package->promo_offer = $promo;
+		return $package;
+	}
+
 	public function get_day_schedule($date)
 	{
 		$day_of_week = (int) date('N', strtotime($date));
@@ -226,6 +272,134 @@ class Booking_model extends CI_Model
 			->where('id', (int) $booking_id)
 			->get('studio_bookings')
 			->row();
+	}
+
+	public function get_all_admin_bookings()
+	{
+		return $this->db
+			->order_by('created_at', 'DESC')
+			->get('studio_bookings')
+			->result();
+	}
+
+	public function get_active_pilates_schedules()
+	{
+		return $this->db
+			->select('s.id, s.discipline, s.class_type, s.day_of_week, s.start_time, s.duration_minutes, c.name AS coach_name')
+			->from('class_schedules s')
+			->join('coaches c', 'c.id = s.coach_id', 'left')
+			->where('s.discipline', 'pilates')
+			->where('s.is_active', 1)
+			->order_by('s.day_of_week', 'ASC')
+			->order_by('s.start_time', 'ASC')
+			->get()
+			->result();
+	}
+
+	public function update_admin_booking($booking_id, $data)
+	{
+		return $this->db->where('id', (int) $booking_id)->update('studio_bookings', $data);
+	}
+
+	public function cancel_admin_booking($booking_id)
+	{
+		return $this->db
+			->where('id', (int) $booking_id)
+			->where_in('booking_status', array('pending_payment', 'confirmed'))
+			->update('studio_bookings', array('booking_status' => 'cancelled'));
+	}
+
+	public function reschedule_admin_booking($booking_id, $sessions)
+	{
+		$this->db->trans_begin();
+		$booking = $this->db->query(
+			'SELECT * FROM studio_bookings WHERE id = ? FOR UPDATE',
+			array((int) $booking_id)
+		)->row();
+		if (!$booking || !in_array($booking->booking_status, array('pending_payment', 'confirmed'), TRUE)
+			|| count($sessions) !== (int) $booking->session_count + (int) $booking->bonus_sessions) {
+			$this->db->trans_rollback();
+			return FALSE;
+		}
+
+		$today = new DateTime('today', new DateTimeZone('Asia/Jakarta'));
+		$latest_start = clone $today;
+		$latest_start->modify('+2 years');
+		$first_session = NULL;
+		foreach ($sessions as $session) {
+			if (!isset($session['session_date']) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $session['session_date'])) {
+				$this->db->trans_rollback();
+				return FALSE;
+			}
+			$session_date = new DateTime($session['session_date'], new DateTimeZone('Asia/Jakarta'));
+			if ($first_session === NULL || $session_date < $first_session) {
+				$first_session = $session_date;
+			}
+		}
+		if ($first_session < $today || $first_session > $latest_start) {
+			$this->db->trans_rollback();
+			return FALSE;
+		}
+		$latest_session = clone $first_session;
+		$latest_session->modify('+' . ((int) $booking->validity_days > 0 ? (int) $booking->validity_days : 365) . ' days');
+		$promo_latest = new DateTime('2026-10-30', new DateTimeZone('Asia/Jakarta'));
+		foreach ($sessions as $session) {
+			$session_date = new DateTime($session['session_date'], new DateTimeZone('Asia/Jakarta'));
+			if ($session_date < $first_session || $session_date > $latest_session
+				|| ($booking->promo_code === 'PILATES-1010' && $session_date > $promo_latest)) {
+				$this->db->trans_rollback();
+				return FALSE;
+			}
+		}
+
+		$this->db->where('booking_id', (int) $booking_id)->delete('studio_booking_sessions');
+		$unique = array();
+		foreach ($sessions as $session) {
+			$schedule_id = (int) $session['schedule_id'];
+			$date = $session['session_date'];
+			$key = $schedule_id . '|' . $date;
+			if (isset($unique[$key])) {
+				$this->db->trans_rollback();
+				return FALSE;
+			}
+			$unique[$key] = TRUE;
+			$schedule = $this->db->query(
+				'SELECT s.*, c.name AS coach_name
+				FROM class_schedules s
+				LEFT JOIN coaches c ON c.id = s.coach_id
+				WHERE s.id = ? AND s.discipline = ? AND s.is_active = 1
+				FOR UPDATE',
+				array($schedule_id, 'pilates')
+			)->row();
+			if (!$schedule || (int) $schedule->day_of_week !== (int) date('N', strtotime($date))) {
+				$this->db->trans_rollback();
+				return FALSE;
+			}
+			$occupancy = $this->get_slot_occupancy($schedule_id, $date);
+			$is_exclusive = strpos($booking->package_kind, 'group') === FALSE;
+			if ($occupancy->has_exclusive || ($is_exclusive && (int) $occupancy->booked_attendees > 0)
+				|| (!$is_exclusive && (int) $occupancy->booked_attendees + (int) $booking->participants > 7)) {
+				$this->db->trans_rollback();
+				return FALSE;
+			}
+			$this->db->insert('studio_booking_sessions', array(
+				'booking_id' => (int) $booking_id,
+				'schedule_id' => $schedule_id,
+				'session_date' => $date,
+				'start_time' => $schedule->start_time,
+				'duration_minutes' => (int) $schedule->duration_minutes,
+				'coach_name' => $schedule->coach_name,
+				'class_type' => $schedule->class_type,
+				'attendees' => (int) $booking->participants,
+				'is_exclusive' => $is_exclusive ? 1 : 0
+			));
+		}
+		if ($this->db->trans_status() === FALSE) {
+			$this->db->trans_rollback();
+			return FALSE;
+		}
+		$this->db->trans_commit();
+		return TRUE;
 	}
 
 	public function set_payment_status($booking_id, $status, $admin_id)
